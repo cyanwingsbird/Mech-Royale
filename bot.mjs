@@ -11,12 +11,12 @@ export const PARAMS = {
   retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
-  strafeMin: 0.35, strafeMax: 0.95,
+  strafeMin: 0.45, strafeMax: 1.15,
   crateRange: 70, npcRange: 85,
   farmHp: 0.7,
   npcFarmHp: 0.8,
   farmBias: 1.0,
-  velBlend: 0.3, // lead on blend of instantaneous and smoothed velocity
+  velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
   dodge: 1,
   explore: 0,
