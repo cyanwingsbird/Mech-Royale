@@ -37,8 +37,8 @@ export const PARAMS = {
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
 
-const UPG = ["plating", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
-  "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
+const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
+  "lightning_efficiency", "reactor", "capacitor", "gyros", "lightning_range", "lightning_chain", "jets", "mortar_reload", "sensors"];
 const WRANK = { laser: 3, lightning: 2, mortar: 1, gun: 0 };
 
 export class Bot {
@@ -605,7 +605,7 @@ export class Bot {
           for (let k = 0; k < 12; k++) {
             const a = (k / 12) * TAU, dx = Math.cos(a), dy = Math.sin(a);
             if (!m.walkable(X + dx * 4, Y + dy * 4) || !this.okPos(X + dx * 5, Y + dy * 5)) continue;
-            for (const bst of [false, me.energy > 10]) {
+            for (const bst of [false, me.energy > (light ? 40 : 10)]) {
               const r = risk(dx, dy, bst);
               const sc = r * 10 + (pref == null ? 0 : (1 - Math.cos(a - pref)) * 0.8) + (bst ? 0.1 : 0);
               if (sc < bs) { bs = sc; best = [dx, dy, bst]; }
