@@ -19,7 +19,7 @@ export const PARAMS = {
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
   dodge: 1,
-  explore: 0,
+  explore: 1,
   pickyEngage: 0,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
@@ -29,7 +29,7 @@ export const PARAMS = {
   seek: 0, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 1,
-  kite: 0.5,
+  kite: 0,
   headAim: 0, duck: 0,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
