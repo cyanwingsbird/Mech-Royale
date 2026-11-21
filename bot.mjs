@@ -32,6 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
+  rseed: 0, roof: 1, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -47,7 +48,7 @@ export class Bot {
     this.name = "kestrel";
     this.cfg = hello.config; this.map = map; this.id = hello.slot;
     this.P = { ...PARAMS, ...params };
-    let s = (hello.seed >>> 0) || 12345;
+    let s = (((hello.seed >>> 0) || 12345) ^ (this.P.rseed | 0)) >>> 0 || 1;
     this.rnd = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
     this.en = new Map(); this.npcs = new Map(); this.crates = new Map(); this.pickups = new Map(); this.cubes = new Map();
     this.prevAlive = hello.config.match.mechs; this.myKills = 0; this.otherDeaths = 0; this.ffa = false;
@@ -173,6 +174,101 @@ export class Bot {
       if (sc > bs) { bs = sc; best = [cx, cy]; }
     }
     return best;
+  }
+
+  // ---------- rooftops ----------
+  computeRoofs() {
+    const m = this.map, nx = m.nx, N = m.N, P = this.P;
+    const key = P.roofMinH + "/" + P.roofMaxH;
+    if (m._roofs && m._roofs.key === key) { ({ lab: this.roofLab, dist: this.roofDist, good: this.roofs } = m._roofs); return; }
+    const lab = new Int32Array(N).fill(-1); const roofs = [];
+    for (let c = 0; c < N; c++) {
+      if (!m.solid[c] || lab[c] !== -1) continue;
+      const top = m.top[c], h = top - m.terrainAt(m.cx(c), m.cy(c));
+      if (h < P.roofMinH || h > P.roofMaxH) { lab[c] = -2; continue; }
+      const id = roofs.length, cells = [], st = [c]; lab[c] = id;
+      while (st.length) {
+        const k = st.pop(); cells.push(k); const i = k % nx;
+        for (const n of [k - 1, k + 1, k - nx, k + nx]) {
+          if (n < 0 || n >= N || (n === k - 1 && i === 0) || (n === k + 1 && i === nx - 1)) continue;
+          if (lab[n] !== -1 || !m.solid[n] || Math.abs(m.top[n] - top) > 0.7) continue;
+          lab[n] = id; st.push(n);
+        }
+      }
+      roofs.push({ id, cells, top });
+    }
+    // distance from the roof edge (cells) by multi-source BFS inside each roof
+    const dist = new Int16Array(N).fill(-1); const q = [];
+    for (const r of roofs) for (const k of r.cells) {
+      const i = k % nx; let edge = false;
+      for (const n of [k - 1, k + 1, k - nx, k + nx]) if (n < 0 || n >= N || (n === k - 1 && i === 0) || (n === k + 1 && i === nx - 1) || lab[n] !== r.id) { edge = true; break; }
+      if (edge) { dist[k] = 0; q.push(k); }
+    }
+    for (let h = 0; h < q.length; h++) {
+      const k = q[h], i = k % nx;
+      for (const n of [k - 1, k + 1, k - nx, k + nx]) { if (n < 0 || n >= N || (n === k - 1 && i === 0) || (n === k + 1 && i === nx - 1)) continue; if (lab[n] !== lab[k] || dist[n] !== -1) continue; dist[n] = dist[k] + 1; q.push(n); }
+    }
+    const good = [];
+    for (const r of roofs) {
+      let best = -1, bd = -1;
+      for (const k of r.cells) if (dist[k] > bd) { bd = dist[k]; best = k; }
+      if (bd < 3) continue;
+      r.center = [m.cx(best), m.cy(best)]; r.depth = bd;
+      r.edges = r.cells.filter((k) => dist[k] === 0);
+      good.push(r);
+    }
+    this.roofLab = lab; this.roofDist = dist; this.roofs = good;
+    m._roofs = { key, lab, dist, good };
+  }
+  roofAt(x, y, z) {
+    if (!this.roofs) return null;
+    const c = this.map.cellOf(x, y), id = this.roofLab[c];
+    if (id < 0) return null;
+    const r = this.roofs.find((q) => q.id === id);
+    return r && z > r.top - 1.5 ? r : null;
+  }
+  roofOK(r, t) {
+    const z = this.z;
+    if (this.roofBan && this.roofBan.get(r.id) > t) return false;
+    const [x, y] = r.center;
+    if (hyp(x - z.center[0], y - z.center[1]) > z.radius - 20) return false;
+    if (hyp(x - z.next_center[0], y - z.next_center[1]) > z.next_radius * 0.85 - 10) return false;
+    return true;
+  }
+  pickRoof(t) {
+    if (!this.roofs) this.computeRoofs();
+    if (this.roof && this.roofOK(this.roof, t) && t - this.roofPickT < 20) return this.roof;
+    if (this.roof && this.roofOK(this.roof, t)) { this.roofPickT = t; return this.roof; }
+    const me = this.me; let best = null, bs = 1e9;
+    for (const r of this.roofs) {
+      if (!this.roofOK(r, t)) continue;
+      const d = hyp(r.center[0] - me.pos[0], r.center[1] - me.pos[1]);
+      if (d > 320) continue;
+      const sc = d + (r.top - this.map.terrainAt(r.center[0], r.center[1])) * 1.5 - Math.min(r.depth, 8) * 3;
+      if (sc < bs) { bs = sc; best = r; }
+    }
+    if (best !== this.roof) { this.roof = best; this.roofClimbT = null; this.roofApproach = null; }
+    this.roofPickT = t;
+    return best;
+  }
+  roofApproachFor(r) {
+    // open ground cell hugging the roof's wall, cheap to reach from here
+    const m = this.map, me = this.me, nx = m.nx; let best = null, bs = 1e9;
+    for (const k of r.edges) {
+      const de = hyp(m.cx(k) - me.pos[0], m.cy(k) - me.pos[1]); if (de > bs) continue;
+      const i0 = k % nx, j0 = (k / nx) | 0;
+      for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+        const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= nx || j >= m.ny) continue;
+        const c = j * nx + i; if (!m.comp[c] || m.solid[c]) continue;
+        const sc = hyp(m.cx(c) - me.pos[0], m.cy(c) - me.pos[1]) + 6 * hyp(di, dj);
+        if (sc < bs) { bs = sc; best = { x: m.cx(c), y: m.cy(c), ex: m.cx(k), ey: m.cy(k) }; }
+      }
+    }
+    return best;
+  }
+  onRoofCell(r, x, y, minDepth = 1) {
+    const c = this.map.cellOf(x, y);
+    return this.roofLab[c] === r.id && this.roofDist[c] >= minDepth;
   }
 
   // where to look for a fight: nearest enemy seen in the last 40 s, else the last near/mid gunshot
@@ -393,7 +489,71 @@ export class Bot {
       return v;
     };
 
-    if (zoneUrgent) {
+    const roofMode = P.roof && (!this.ffa || P.roofAlways);
+    let roofLabel = null;
+    if (roofMode) {
+      if (!this.roofs) this.computeRoofs();
+      const here = this.roofAt(X, Y, Z);
+      // move on the roof towards `des`, never closer than 2 m to the edge
+      const roofStep = (rf, des) => {
+        const dn = hyp(des[0], des[1]); if (dn < 0.05) return [0, 0];
+        let best = [0, 0], bs = 0.15;
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * TAU, vx = Math.cos(a), vy = Math.sin(a);
+          if (!this.onRoofCell(rf, X + vx * 3, Y + vy * 3, 1) || !this.onRoofCell(rf, X + vx * 5, Y + vy * 5, 1)) continue;
+          const sc = (vx * des[0] + vy * des[1]) / dn; if (sc > bs) { bs = sc; best = [vx, vy]; }
+        }
+        return best;
+      };
+      if (here && this.roofOK(here, t)) {
+        this.roof = here; this.roofClimbT = null; this.roofApproach = null;
+        const cx = here.center[0] - X, cy = here.center[1] - Y, dc = hyp(cx, cy) || 1;
+        const slack = Math.max(4, here.depth * 2 * 0.5);
+        if (target) {
+          if (t > this.strafeT) { this.strafe = -(this.strafe || 1); this.strafeT = t + P.strafeMin + this.rnd() * (P.strafeMax - P.strafeMin); }
+          const dx = target.pos[0] - X, dy = target.pos[1] - Y, d = hyp(dx, dy) || 1, ux = dx / d, uy = dy / d;
+          const tl = (target.weapons || []).includes("lightning");
+          let rad = tl && d < 60 ? -1 : (d > 140 ? 0.4 : 0);
+          let vx = -uy * this.strafe + ux * rad, vy = ux * this.strafe + uy * rad;
+          if (dc > slack) { vx += cx / dc * 0.8; vy += cy / dc * 0.8; }
+          mv = roofStep(here, [vx, vy]);
+          if (mv[0] === 0 && mv[1] === 0) { this.strafe = -this.strafe; mv = roofStep(here, [uy * this.strafe + ux * rad, -ux * this.strafe + uy * rad]); }
+          roofLabel = "R:fight";
+        } else {
+          mv = dc > 1.5 ? roofStep(here, [cx, cy]) : [0, 0];
+          roofLabel = "R:hold";
+        }
+      } else if (!zoneUrgent && (!inCombat || (this.roofClimbT != null && Z > m.groundAt(X, Y) + 3))) {
+        const laserNear = laser == null && !inCombat && [...this.pickups.values()].some((p) => p.kind === "laser" && hyp(p.pos[0] - X, p.pos[1] - Y) < P.roofLaserR && p.pos[2] < m.groundAt(p.pos[0], p.pos[1]) + 4);
+        const rf = laserNear ? null : this.pickRoof(t);
+        if (rf) {
+          if (!this.roofApproach) this.roofApproach = this.roofApproachFor(rf);
+          const ap = this.roofApproach;
+          const h = rf.top - Z;
+          if (ap) {
+            const dAp = hyp(ap.x - X, ap.y - Y), dEdge = hyp(ap.ex - X, ap.ey - Y);
+            if (dAp < 3 || dEdge < 5 || (this.roofClimbT != null && t - this.roofClimbT < 9)) {
+              if (this.roofClimbT == null) this.roofClimbT = t;
+              if (t - this.roofClimbT > 8) { (this.roofBan ??= new Map()).set(rf.id, t + 60); this.roof = null; this.roofClimbT = null; this.roofApproach = null; }
+              const need = Math.min(100, 1.7 * Math.max(0, h) + 12);
+              if (me.grounded && me.energy < need && h > 2) { mv = [0, 0]; roofLabel = "R:charge"; this.roofClimbT = t; }
+              else {
+                const gx = Z > rf.top + 0.5 ? rf.center[0] : ap.ex, gy = Z > rf.top + 0.5 ? rf.center[1] : ap.ey;
+                const dd = hyp(gx - X, gy - Y) || 1; mv = [(gx - X) / dd, (gy - Y) / dd];
+                if (h > -1.5) { if (me.grounded) jump = true; else boost = me.energy > 1; }
+                roofLabel = "R:climb";
+              }
+            } else {
+              this.roofClimbT = null;
+              const nv = this.navTo(ap.x, ap.y, t); mv = [nv[0], nv[1]]; roofLabel = "R:to";
+            }
+          } else { (this.roofBan ??= new Map()).set(rf.id, t + 300); this.roof = null; }
+        }
+      }
+    }
+    if (roofLabel) {
+      label = roofLabel;
+    } else if (zoneUrgent) {
       // head into the next circle, somewhere not dead centre unless tiny
       const a = Math.atan2(Y - z.next_center[1], X - z.next_center[0]);
       const r = Math.max(0, z.next_radius * 0.55 - 6);
@@ -569,7 +729,7 @@ export class Bot {
     }
 
     // --- bullet dodging: pick the move whose next 0.6 s path the visible bullets miss ---
-    if (P.dodge && label !== "shell" && label !== "climb") {
+    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to")) {
       const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
       const bl = [];
       for (const pr of obs.projectiles || []) {
@@ -631,7 +791,7 @@ export class Bot {
       const h0 = this.hist[0];
       if (hyp(X - h0[1], Y - h0[2]) < 1.2 && !(laser && laser.charge > 0)) { this.stuckT = t; this.unstuckDir = (this.rnd() < 0.5 ? -1 : 1) * (0.6 + this.rnd()); this.path = null; }
     }
-    const climbing = label === "climb" || label === "charge jets";
+    const climbing = label === "climb" || label === "charge jets" || (label.startsWith("R:") && label !== "R:to");
     if (climbing) this.stuckT = -9;
     if (t - this.stuckT < 0.7 && wantMove && !climbing) {
       const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = P.unstickBoost && me.energy > 10; label = "unstick";

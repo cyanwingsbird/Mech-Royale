@@ -15,6 +15,7 @@ function handle(line) {
     } catch (e) { console.error("warmup failed", e); }
     try { warmBot(msg, map); } catch (e) { console.error("bot warmup failed", e && e.stack); }
     try { bot = new Bot(msg, map); } catch (e) { console.error("bot init failed", e); }
+    try { if (bot && bot.P.roof) bot.computeRoofs(); } catch (e) { console.error("roof init failed", e); }
     out({ type: "ready", name: "kestrel" });
   } else if (msg.type === "obs") {
     let act = null;
