@@ -325,7 +325,8 @@ export class Bot {
       };
       for (const c of this.cubes.values()) consider("cube", c, 0.6);
       const haveRank = w1 ? WRANK[w1.kind] ?? 0 : -1;
-      for (const p of this.pickups.values()) if ((WRANK[p.kind] ?? 0) > haveRank && p.kind !== "gun") consider("pickup", p, w1 ? 1.2 : 0.8);
+      const PW = { laser: 0.35, lightning: 0.9, mortar: 1.3 };
+      for (const p of this.pickups.values()) if ((WRANK[p.kind] ?? 0) > haveRank && p.kind !== "gun") consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
       for (const d of obs.drops || []) if (d.lands_in < 12) consider("drop", d, 0.7, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
         for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias, 15 * P.farmBias);
