@@ -23,7 +23,7 @@ export const PARAMS = {
   pickyEngage: 0,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
-  lightClose: 0,
+  lightClose: 1,
   unstickBoost: 1,
   eagerReload: 0,
   seek: 0, seekHp: 0.8,
