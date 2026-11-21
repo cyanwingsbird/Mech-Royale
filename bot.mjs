@@ -11,7 +11,7 @@ export const PARAMS = {
   retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
-  strafeMin: 0.25, strafeMax: 0.7,
+  strafeMin: 0.5, strafeMax: 1.3,
   crateRange: 70, npcRange: 85,
   farmHp: 0.5,
   npcFarmHp: 0.6,
