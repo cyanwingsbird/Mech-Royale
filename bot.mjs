@@ -26,7 +26,7 @@ export const PARAMS = {
   lightClose: 0,
   unstickBoost: 1,
   eagerReload: 0,
-  seek: 1, seekHp: 0.8,
+  seek: 0, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 1,
   laserRange: 150,
