@@ -31,7 +31,7 @@ export const PARAMS = {
   laserHold: 0,
   kite: 0,
   headAim: 0, duck: 0,
-  dual: 1, // carry laser + lightning (drops the gun)
+  dual: 0, // carry laser + lightning (drops the gun)
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
