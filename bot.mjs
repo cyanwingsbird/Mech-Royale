@@ -27,13 +27,15 @@ export const PARAMS = {
   unstickBoost: 1,
   eagerReload: 0,
   seek: 1, seekHp: 0.8,
+  laserTiming: 0, laserVlat: 4, laserWait: 1.2,
+  laserHold: 1,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
 
-const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
+const UPG = ["plating", "laser_charge", "laser_damage", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "lightning_efficiency", "reactor", "capacitor", "gyros", "lightning_range", "lightning_chain", "jets", "mortar_reload", "sensors"];
 const WRANK = { laser: 3, lightning: 2, mortar: 1, gun: 0 };
 
@@ -644,9 +646,15 @@ export class Bot {
           if (ch >= need - 0.11) aim = [D.yaw, D.pitch];
           const ey = Math.abs(wrap(me.aim[0] - D.yaw)), epi = Math.abs(me.aim[1] - D.pitch);
           const tolY = Math.atan2(rad * 0.75, D.dist), tolP = Math.atan2(3.2, D.dist);
-          if (ch >= need && ey < tolY + slack * 0.5 && epi < tolP + 0.05) fire[1] = false; // release
+          // wait for a moment when the target is not sliding sideways (strafe reversal), up to laserWait s after full charge
+          if (ch >= need) { if (this.laserFullT == null) this.laserFullT = t; } else this.laserFullT = null;
+          const lx = Math.cos(D.yaw), ly = Math.sin(D.yaw);
+          const vlat = Math.abs(-ly * (shootAt.vel[0] - me.vel[0]) + lx * (shootAt.vel[1] - me.vel[1]));
+          const steady = !P.laserTiming || vlat < P.laserVlat || D.dist < 45 || (this.laserFullT != null && t - this.laserFullT > P.laserWait);
+          if (ch >= need && steady && ey < tolY + slack * 0.5 && epi < tolP + 0.05) { fire[1] = false; this.laserFullT = null; } // release
           else fire[1] = true;
-        } else if (ch > 0) fire[1] = false;
+        } else if (ch > 0) { fire[1] = P.laserHold ? true : false; if (P.laserHold) aim = [D.yaw, D.pitch]; } // keep the charge aimed instead of wasting it
+        if (isMech) this.lastShotAt = { x: shootAt.pos[0], y: shootAt.pos[1], z: this.centerZ(shootAt), t };
       }
       if (gunReady && L.dist + 0 < gun.stats.range * 0.97) {
         const ey = Math.abs(wrap(me.aim[0] - L.yaw)), epi = Math.abs(me.aim[1] - L.pitch);
@@ -668,6 +676,8 @@ export class Bot {
       }
     } else {
       if (laser && (laser.charge || 0) > 0) fire[1] = false;
+      const holdLaser = P.laserHold && laser && (laser.charge || 0) > 0 && this.lastShotAt && t - this.lastShotAt.t < 4;
+      if (holdLaser) fire[1] = true;
       // look: at whoever hurt us, at last known enemy, at a sound, else sweep along travel
       const lastE = recent.filter((e) => t - e.seenT < 6).sort((a, b) => a.dist - b.dist)[0];
       if (t - this.lastDmgT < 2 && this.lastDmgBearing != null && !(lastE && lastE.fresh)) aim = [this.lastDmgBearing, 0];
@@ -678,6 +688,9 @@ export class Bot {
         if (wantMove) { this.scanBase = base; aim = [base + 1.15 * Math.sin(t * 1.3), 0]; }
         else aim = [wrap(me.aim[0] + 1.6 * this.dt * 6), 0]; // slow 360 scan while standing
       }
+    }
+    if (!shootAt && P.laserHold && laser && (laser.charge || 0) > 0 && this.lastShotAt && t - this.lastShotAt.t < 4) {
+      const L2 = this.lastShotAt; aim = [Math.atan2(L2.y - Y, L2.x - X), Math.atan2(L2.z - (Z + this.muzzleH), hyp(L2.x - X, L2.y - Y) || 1)];
     }
     // reload when it is free to do so
     if (gun && gun.reload <= 0 && gun.ammo < gun.stats.mag) {
