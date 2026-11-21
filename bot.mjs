@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 0, spin0: 0, laserDodge: 0, ldStart: 0.4, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -600,14 +600,15 @@ export class Bot {
         if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
         label = "kite " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
-      if (P.grabR && !laser && !this.retreating) {
+      if (P.grabR && !laser && (!this.retreating || P.grabRetreat)) {
         // a laser lying close by is worth more than a few seconds of strafing: go and take it while shooting
-        let gp = null, gd = P.grabR;
+        let gp = null, gd = 1e9;
         for (const p of this.pickups.values()) {
-          if (p.kind !== "laser" || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
-          const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < gd) { gd = d; gp = p; }
+          const isL = p.kind === "laser", isE = P.grabLight && p.kind === "lightning" && !w1;
+          if (!(isL || isE) || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
+          const d = hyp(p.pos[0] - X, p.pos[1] - Y) * (isL ? 1 : P.grabLight); if (d < Math.min(gd, P.grabR)) { gd = d; gp = p; }
         }
-        if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab laser"; }
+        if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab " + gp.kind; }
       }
     } else if (P.duck && this.snipedBy(t)) {
       const e = this.snipedBy(t);
@@ -856,6 +857,7 @@ export class Bot {
     const fire = [false, false];
     let aim = null;
     const shootAt = target || farmTgt;
+    this.shootAt = shootAt ? { id: shootAt.id, kind: shootAt.kind || (this.crates.has(shootAt.id) ? "crate" : "?"), dist: hyp(shootAt.pos[0] - X, shootAt.pos[1] - Y), vis: shootAt.seenT === t, vel: shootAt.vel } : null;
     const ahead = 0.05;
     if (shootAt) {
       const isMech = shootAt === target;
