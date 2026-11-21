@@ -31,7 +31,7 @@ export const PARAMS = {
   laserHold: 0,
   kite: 0,
   headAim: 0, duck: 0,
-  laserRange: 150,
+  laserRange: 110,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
@@ -404,7 +404,7 @@ export class Bot {
     } else if (target) {
       let want = P.wantRange;
       if (target.weapons && target.weapons.includes("lightning")) want = Math.max(want, 80);
-      if (light && !laser && P.lightClose) want = Math.min(want, 18);
+      if (light && !laser && P.lightClose) want = Math.min(want, 25);
       if (laser && !(target.weapons && target.weapons.includes("lightning"))) want = Math.max(want, P.laserRange);
       if (this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
       if (z.radius < 80) want = Math.min(want, z.radius * 0.9);
