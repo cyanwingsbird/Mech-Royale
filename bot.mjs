@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, noLight: 0, evade: 0, evadeAfter: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -412,6 +412,7 @@ export class Bot {
     const pickSlot = (kind) => {
       if (kind === "gun" || slotOf(kind) >= 0) return -1;
       if (kind === "mortar" && P.noMortar) return -1;
+      if (kind === "lightning" && P.noLight) return -1;
       if (P.dual && gun && ((kind === "lightning" && laser) || (kind === "laser" && light))) return gS; // laser + lightning, drop the gun
       if (!w1) return null;
       return (WRANK[kind] ?? 0) > (WRANK[w1.kind] ?? 0) ? 1 : -1;
@@ -601,6 +602,7 @@ export class Bot {
         if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
         label = "kite " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
+      if (P.evade && !this.ffa && this.myKills >= P.evadeAfter) { mv = dodge(target, P.evade); boost = me.energy > 40 && target.dist < P.evade * 0.7; label = "evade " + target.id; }
       if (P.grabR && !laser && (!this.retreating || P.grabRetreat)) {
         // a laser lying close by is worth more than a few seconds of strafing: go and take it while shooting
         let gp = null, gd = 1e9;
