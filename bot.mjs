@@ -7,7 +7,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const hyp = Math.hypot;
 
 export const PARAMS = {
-  wantRange: 110, // preferred gun duel distance
+  wantRange: 120, // preferred gun duel distance
   retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
@@ -20,7 +20,7 @@ export const PARAMS = {
   ffaEngage: 130,
   dodge: 1,
   explore: 0,
-  pickyEngage: 1,
+  pickyEngage: 0,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
   lightClose: 0,
