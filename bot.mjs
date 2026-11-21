@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -410,6 +410,7 @@ export class Bot {
     // which slot a pickup of this kind should go into: null = empty slot, 0/1 = replace that slot, -1 = not wanted
     const pickSlot = (kind) => {
       if (kind === "gun" || slotOf(kind) >= 0) return -1;
+      if (kind === "mortar" && P.noMortar) return -1;
       if (P.dual && gun && ((kind === "lightning" && laser) || (kind === "laser" && light))) return gS; // laser + lightning, drop the gun
       if (!w1) return null;
       return (WRANK[kind] ?? 0) > (WRANK[w1.kind] ?? 0) ? 1 : -1;
