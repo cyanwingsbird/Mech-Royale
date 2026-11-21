@@ -32,14 +32,14 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
 
-const UPG = ["plating", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
+const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
 const WRANK = { laser: 3, lightning: 2, mortar: 1, gun: 0 };
 
@@ -621,7 +621,7 @@ export class Bot {
       farmTgt = npcFoe; mv = dodge(npcFoe, 70); label = "npc fight";
     } else {
       // --- no target: loot / farm / position ---
-      const hot = recent.filter((e) => t - e.seenT < 5 && e.dist < 160);
+      const hot = recent.filter((e) => t - e.seenT < 5 && e.dist < P.quietR);
       const quiet = hot.length === 0 && !underFire;
       let best = null, bs = 1e9;
       const consider = (kind, o, w, extra = 0) => {
@@ -642,7 +642,7 @@ export class Bot {
       for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
         for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias * (laser ? 1 : P.crateNoLaser), 15 * P.farmBias * (laser ? 1 : P.crateNoLaser));
-        if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias, 30 * P.farmBias);
+        if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias * P.npcW, 30 * P.farmBias * P.npcW);
       }
       if (!quiet && best && best.d > 45 && hpF < 0.8) best = null;
       const camping = P.camp && (!this.ffa || P.campAlways);
