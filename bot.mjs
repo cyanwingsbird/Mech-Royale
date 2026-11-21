@@ -19,9 +19,9 @@ export const PARAMS = {
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
   dodge: 1,
-  explore: 1,
-  pickyEngage: 1,
-  coverStrafe: 1,
+  explore: 0,
+  pickyEngage: 0,
+  coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
   lightClose: 0,
   unstickBoost: 1,
@@ -29,7 +29,8 @@ export const PARAMS = {
   seek: 0, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 1,
-  kite: 0.5,
+  kite: 0,
+  headAim: 0, duck: 0,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -82,7 +83,7 @@ export class Bot {
     if (o.kind !== "mech") return this.map.los(me.pos[0], me.pos[1], mz, o.pos[0], o.pos[1], this.centerZ(o));
     // try the body centre, then the upper torso and head (a mech on a roof often shows only its top)
     const sc = 1 + 0.05 * (o.cubes || 0);
-    for (const dz of [4.5 * sc, 7 * sc, 8.3 * sc]) {
+    for (const dz of (this.P.headAim ? [4.5 * sc, 7 * sc, 8.3 * sc] : [4.5 * sc])) {
       if (this.map.los(me.pos[0], me.pos[1], mz, o.pos[0], o.pos[1], o.pos[2] + dz)) { o.aimZoff = dz; return true; }
     }
     o.aimZoff = null; return false;
@@ -422,7 +423,7 @@ export class Bot {
         if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
         label = "kite " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
-    } else if (this.snipedBy(t)) {
+    } else if (P.duck && this.snipedBy(t)) {
       const e = this.snipedBy(t);
       const cov = this.findCover([e, ...threatsForCover.filter((x) => x !== e)], t);
       if (cov) { const nv = this.navTo(cov[0], cov[1], t); mv = nv[2] > 2.2 ? [nv[0], nv[1]] : [0, 0]; boost = me.energy > 30 && nv[2] > 2.2; }
@@ -708,7 +709,8 @@ export class Bot {
     // --- upgrades ---
     if (obs.offer) {
       let bi = 0, br = 1e9;
-      obs.offer.choices.forEach((c, i) => { let r = UPG.indexOf(c.id); if (r < 0) r = 50; if (r < br) { br = r; bi = i; } });
+      const order = P.upg || UPG;
+      obs.offer.choices.forEach((c, i) => { let r = order.indexOf(c.id); if (r < 0) r = 50; if (r < br) { br = r; bi = i; } });
       act.pick = bi;
     }
     act.move = [Math.round(mv[0] * 1000) / 1000, Math.round(mv[1] * 1000) / 1000];
