@@ -19,8 +19,8 @@ export const PARAMS = {
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
   dodge: 1,
-  explore: 1,
-  pickyEngage: 1,
+  explore: 0,
+  pickyEngage: 0,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
   lightClose: 1,
