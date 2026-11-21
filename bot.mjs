@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  noMortar: 0, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  laserDodge: 2, ldStart: 0.4, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -337,6 +337,7 @@ export class Bot {
     for (const o of obs.mechs) {
       if (o.kind === "npc") { const p = this.npcs.get(o.id) || {}; Object.assign(p, o, { seenT: t }); this.npcs.set(o.id, p); seenNow.add(o.id); continue; }
       const p = this.en.get(o.id) || { evx: o.vel[0], evy: o.vel[1] };
+      if (o.charging) { if (!(p.charging && t - (p.seenT ?? -9) < 0.35) || p.chargeT == null) p.chargeT = t; } else p.chargeT = null;
       const a = 0.22;
       p.evx += (o.vel[0] - p.evx) * a; p.evy += (o.vel[1] - p.evy) * a;
       Object.assign(p, o, { seenT: t }); this.en.set(o.id, p); seenNow.add(o.id);
@@ -424,6 +425,12 @@ export class Bot {
       const hostile = (e.hitMeT && t - e.hitMeT < 6) || e.aimingAtMe;
       if ((this.ffa || P.pickyEngage) && !hostile && e.dist > P.ffaEngage && e.hp > 0.5 * e.max_hp) continue;
       let s = (e.hp ?? 1400) / myDps + e.dist / 50 - (hostile ? 2 : 0) - (e.id === this.tgtId ? 1.5 : 0);
+      if (P.threatW) {
+        const ew = e.weapons || [];
+        const theirDps = (ew.includes("laser") ? 130 : 0) + (ew.includes("lightning") && e.dist < 55 ? 240 : 0) + (ew.includes("mortar") ? 70 : 0);
+        s -= P.threatW * theirDps / 100;
+        if (laser && ew.includes("mortar")) s -= P.threatW * 0.6;
+      }
       if (s < bestS) { bestS = s; target = e; }
     }
     this.tgtId = target ? target.id : null;
@@ -730,7 +737,24 @@ export class Bot {
     }
 
     // --- bullet dodging: pick the move whose next 0.6 s path the visible bullets miss ---
-    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to")) {
+    if (P.laserDodge && label !== "shell" && label !== "climb" && !label.startsWith("R:")) {
+      let th = null, td = 0;
+      for (const e of this.en.values()) {
+        if (e.seenT !== t || !e.charging || e.chargeT == null || t - e.chargeT < P.ldStart) continue;
+        const dx = X - e.pos[0], dy = Y - e.pos[1], d = hyp(dx, dy);
+        if (d > 290 || d < 12) continue;
+        if (Math.abs(wrap(e.aim[0] - Math.atan2(dy, dx))) > Math.max(0.05, 6 / d)) continue;
+        if (!th || d < td) { th = e; td = d; }
+      }
+      if (th) {
+        const ux = (X - th.pos[0]) / td, uy = (Y - th.pos[1]) / td, px = -uy, py = ux;
+        const vl = me.vel[0] * px + me.vel[1] * py;
+        let sg = vl >= 0 ? 1 : -1; if (P.laserDodge === 1) sg = -sg; // 1 = reverse lateral motion, 2 = keep going
+        if (!m.walkable(X + px * sg * 4, Y + py * sg * 4)) sg = -sg;
+        if (m.walkable(X + px * sg * 4, Y + py * sg * 4)) { mv = [px * sg, py * sg]; boost = me.energy > (light ? 40 : 10); label += "+ldodge"; }
+      }
+    }
+    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !label.endsWith("+ldodge")) {
       const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
       const bl = [];
       for (const pr of obs.projectiles || []) {
