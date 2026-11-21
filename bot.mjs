@@ -13,8 +13,8 @@ export const PARAMS = {
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
   strafeMin: 0.35, strafeMax: 0.95,
   crateRange: 70, npcRange: 85,
-  farmHp: 0.7,
-  npcFarmHp: 0.8,
+  farmHp: 0.5,
+  npcFarmHp: 0.6,
   farmBias: 1.0,
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
@@ -37,7 +37,7 @@ export const PARAMS = {
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
 
-const UPG = ["plating", "laser_charge", "laser_damage", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
+const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
   "lightning_efficiency", "reactor", "capacitor", "gyros", "lightning_range", "lightning_chain", "jets", "mortar_reload", "sensors"];
 const WRANK = { laser: 3, lightning: 2, mortar: 1, gun: 0 };
 
