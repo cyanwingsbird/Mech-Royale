@@ -29,9 +29,9 @@ export const PARAMS = {
   seek: 0, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 0,
-  kite: 0,
+  kite: 0.5,
   headAim: 0, duck: 0,
-  laserRange: 110,
+  laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
