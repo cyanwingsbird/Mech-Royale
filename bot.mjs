@@ -22,6 +22,9 @@ export const PARAMS = {
   explore: 1,
   pickyEngage: 1,
   coverStrafe: 1,
+  dropW: 0.7, dropLead: 12,
+  lightClose: 0,
+  unstickBoost: 1,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -379,7 +382,7 @@ export class Bot {
     } else if (target) {
       let want = P.wantRange;
       if (target.weapons && target.weapons.includes("lightning")) want = Math.max(want, 80);
-      if (light && !laser) want = Math.min(want, 34);
+      if (light && !laser && P.lightClose) want = Math.min(want, 34);
       if (laser && !(target.weapons && target.weapons.includes("lightning"))) want = Math.max(want, P.laserRange);
       if (this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
       if (z.radius < 80) want = Math.min(want, z.radius * 0.9);
@@ -419,7 +422,7 @@ export class Bot {
       const haveRank = w1 ? WRANK[w1.kind] ?? 0 : -1;
       const PW = { laser: 0.35, lightning: 0.9, mortar: 1.3 };
       for (const p of this.pickups.values()) if ((WRANK[p.kind] ?? 0) > haveRank && p.kind !== "gun") consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
-      for (const d of obs.drops || []) if (d.lands_in < 12) consider("drop", d, 0.7, d.holder != null && d.holder !== me.id ? 80 : 0);
+      for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
         for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias, 15 * P.farmBias);
         if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias, 30 * P.farmBias);
@@ -590,7 +593,7 @@ export class Bot {
     const climbing = label === "climb" || label === "charge jets";
     if (climbing) this.stuckT = -9;
     if (t - this.stuckT < 0.7 && wantMove && !climbing) {
-      const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = me.energy > 10; label = "unstick";
+      const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = P.unstickBoost && me.energy > 10; label = "unstick";
     }
     // off the nav mesh (roof / pit): head for the nearest open cell
     if (!m.comp[m.cellOf(X, Y)] && wantMove && !climbing) {
