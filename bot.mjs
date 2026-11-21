@@ -20,6 +20,8 @@ export const PARAMS = {
   ffaEngage: 130,
   dodge: 1,
   laserRange: 150,
+  camp: 1, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
+  campLootR: 45, campLaserR: 110, campFightLeash: 12,
 };
 
 const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
@@ -117,6 +119,34 @@ export class Bot {
     }
     this.cover = best === null ? null : [m.cx(best), m.cy(best)];
     return this.cover;
+  }
+
+  // a defensive spot near (x,y): beside walls, open to a few directions only, inside the safe circle
+  findCamp(x, y, t) {
+    const m = this.map, z = this.z;
+    const c0 = m.nearestOpen(x, y), i0 = c0 % m.nx, j0 = (c0 / m.nx) | 0;
+    const R = 30; let best = null, bs = -1e9;
+    const zc = this.zonePull || z.radius > z.next_radius + 1 ? z.next_center : z.center;
+    const zr = this.zonePull || z.radius > z.next_radius + 1 ? z.next_radius : z.radius;
+    for (let dj = -R; dj <= R; dj += 2) for (let di = -R; di <= R; di += 2) {
+      const i = i0 + di, j = j0 + dj; if (i < 1 || j < 1 || i >= m.nx - 1 || j >= m.ny - 1) continue;
+      const c = j * m.nx + i; if (!m.comp[c] || m.nearWall[c] > 2) continue;
+      const cx = m.cx(c), cy = m.cy(c);
+      const dz = hyp(cx - zc[0], cy - zc[1]); if (dz > zr * 0.75 - 8) continue;
+      // how many of 16 directions are blocked within 14 m (walls behind us)
+      const g = m.ground[c] + 6;
+      let blocked = 0, farOpen = 0;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * TAU, ex = cx + Math.cos(a) * 14, ey = cy + Math.sin(a) * 14;
+        if (!m.los(cx, cy, g, ex, ey, g)) blocked++;
+        else if (m.los(cx, cy, g, cx + Math.cos(a) * 70, cy + Math.sin(a) * 70, g)) farOpen++;
+      }
+      if (blocked < 4 || farOpen < 2) continue;
+      const d = hyp(cx - x, cy - y);
+      const sc = Math.min(blocked, 10) * 1.0 + Math.min(farOpen, 5) * 0.6 - d * 0.06 - dz / zr * 2;
+      if (sc > bs) { bs = sc; best = [cx, cy]; }
+    }
+    return best;
   }
 
   lead(o, speed, ahead) {
@@ -308,7 +338,13 @@ export class Bot {
       if (laser && !(target.weapons && target.weapons.includes("lightning"))) want = Math.max(want, P.laserRange);
       if (this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
       if (z.radius < 80) want = Math.min(want, z.radius * 0.9);
-      mv = dodge(target, want); label = "fight " + target.id;
+      if (P.camp && (!this.ffa || P.campAlways) && this.camp) {
+        want = Math.min(Math.max(target.dist, 40), 200); // hold the current distance, do not chase
+        mv = dodge(target, want);
+        const dcamp = hyp(this.camp[0] - X, this.camp[1] - Y);
+        if (dcamp > P.campFightLeash) { const nv = this.navTo(this.camp[0], this.camp[1], t); mv = [nv[0], nv[1]]; }
+        label = "hold " + target.id;
+      } else { mv = dodge(target, want); label = "fight " + target.id; }
     } else if (npcFoe && hpF > 0.3) {
       farmTgt = npcFoe; mv = dodge(npcFoe, 70); label = "npc fight";
     } else {
@@ -333,7 +369,23 @@ export class Bot {
         if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias, 30 * P.farmBias);
       }
       if (!quiet && best && best.d > 45 && hpF < 0.8) best = null;
-      if (best && bs < 420) {
+      const camping = P.camp && (!this.ffa || P.campAlways);
+      if (camping && best) {
+        const isLaser = best.kind === "pickup" && best.o.kind === "laser";
+        const lim = isLaser ? P.campLaserR : best.kind === "drop" ? 0 : P.campLootR;
+        if (best.d > lim || (best.kind === "npc")) best = null;
+      }
+      if (camping && !best && !this.retreating) {
+        if (!this.camp || t - this.campT > 6 || !this.okPos(this.camp[0], this.camp[1])) {
+          const nc = this.findCamp(this.camp && this.okPos(this.camp[0], this.camp[1]) ? this.camp[0] : X, this.camp && this.okPos(this.camp[0], this.camp[1]) ? this.camp[1] : Y, t);
+          if (nc) { this.camp = nc; this.campT = t; }
+        }
+      }
+      if (camping && !best && this.camp && !(this.retreating || (hot.length && hpF < 0.8))) {
+        const dcamp = hyp(this.camp[0] - X, this.camp[1] - Y);
+        if (dcamp > 2.5) { const nv = this.navTo(this.camp[0], this.camp[1], t); mv = [nv[0], nv[1]]; if (dcamp < 8) mv = [mv[0] * 0.4, mv[1] * 0.4]; label = "to camp"; }
+        else { mv = [0, 0]; label = "camp"; }
+      } else if (best && bs < 420) {
         const o = best.o;
         if (best.kind === "crate" || best.kind === "npc") {
           const rng = best.kind === "crate" ? P.crateRange : P.npcRange;
