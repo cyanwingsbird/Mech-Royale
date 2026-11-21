@@ -7,7 +7,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const hyp = Math.hypot;
 
 export const PARAMS = {
-  wantRange: 110, // preferred gun duel distance
+  wantRange: 130, // preferred gun duel distance
   retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
@@ -17,7 +17,7 @@ export const PARAMS = {
   npcFarmHp: 0.6,
   farmBias: 1.0,
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
-  ffaEngage: 130,
+  ffaEngage: 200,
   dodge: 1,
   explore: 0,
   pickyEngage: 0,
