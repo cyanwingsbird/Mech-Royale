@@ -7,10 +7,10 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const hyp = Math.hypot;
 
 export const PARAMS = {
-  wantRange: 95, // preferred gun duel distance
-  retreatHp: 0.25, // go to cover below this
+  wantRange: 110, // preferred gun duel distance
+  retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
-  outnumberStep: 0.08, // extra retreat threshold per additional attacker
+  outnumberStep: 0.14, // extra retreat threshold per additional attacker
   strafeMin: 0.35, strafeMax: 0.95,
   crateRange: 70, npcRange: 85,
   farmHp: 0.5,
@@ -21,6 +21,7 @@ export const PARAMS = {
   dodge: 1,
   explore: 1,
   pickyEngage: 1,
+  coverStrafe: 1,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -277,6 +278,7 @@ export class Bot {
     const losThreats = mechsNow.filter((e) => e.los && e.dist < 290);
     const attackers = losThreats.filter((e) => (e.hitMeT && t - e.hitMeT < 3) || (e.aimingAtMe && e.dist < 240));
     const underFire = t - this.lastDmgT < 2.5;
+    this.multiThreats = recent.filter((e) => t - e.seenT < 3 && e.dist < 220).sort((a, b) => a.dist - b.dist).slice(0, 4);
 
     // --- pick a shooting target ---
     const gun = me.weapons[0] && me.weapons[0].kind === "gun" ? me.weapons[0] : null;
@@ -332,6 +334,27 @@ export class Bot {
       };
       let v = tryDir(this.strafe);
       if (!v) { this.strafe = -this.strafe; this.lastStrafe = this.strafe; v = tryDir(this.strafe); }
+      // several enemies around: pick the step that the fewest other enemies can see
+      if (P.coverStrafe && ref.kind !== "npc") {
+        const others = this.multiThreats.filter((e) => e !== ref);
+        if (others.length) {
+          let best = null, bs = 1e9;
+          const pref = v ? Math.atan2(v[1], v[0]) : null;
+          for (let k = 0; k < 12; k++) {
+            const a = (k / 12) * TAU, vx = Math.cos(a), vy = Math.sin(a);
+            const px = X + vx * 8, py = Y + vy * 8;
+            if (!m.walkable(X + vx * 4, Y + vy * 4) || !m.walkable(px, py) || !this.okPos(px, py)) continue;
+            const g = m.groundAt(px, py);
+            let sc = 0;
+            for (const e of others) if (this.seesMe(e, px, py, g)) sc += 3;
+            if (!this.seesMe(ref, px, py, g)) sc += 1.5; // stay able to shoot the target
+            const dd = hyp(ref.pos[0] - px, ref.pos[1] - py); if (dd < want * 0.6) sc += 1;
+            if (pref != null) sc += (1 - Math.cos(a - pref)) * 0.6;
+            if (sc < bs) { bs = sc; best = [vx, vy]; }
+          }
+          if (best) v = best;
+        }
+      }
       if (!v) { const zc = z.next_center; const a = Math.atan2(zc[1] - Y, zc[0] - X); v = [Math.cos(a), Math.sin(a)]; }
       return v;
     };
