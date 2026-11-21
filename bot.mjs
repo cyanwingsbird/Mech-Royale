@@ -37,8 +37,8 @@ export const PARAMS = {
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
 
-const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
-  "lightning_efficiency", "reactor", "capacitor", "gyros", "lightning_range", "lightning_chain", "jets", "mortar_reload", "sensors"];
+const UPG = ["plating", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
+  "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
 const WRANK = { laser: 3, lightning: 2, mortar: 1, gun: 0 };
 
 export class Bot {
