@@ -404,7 +404,7 @@ export class Bot {
     } else if (target) {
       let want = P.wantRange;
       if (target.weapons && target.weapons.includes("lightning")) want = Math.max(want, 80);
-      if (light && !laser && P.lightClose) want = Math.min(want, 34);
+      if (light && !laser && P.lightClose) want = Math.min(want, 18);
       if (laser && !(target.weapons && target.weapons.includes("lightning"))) want = Math.max(want, P.laserRange);
       if (this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
       if (z.radius < 80) want = Math.min(want, z.radius * 0.9);
