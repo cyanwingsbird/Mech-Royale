@@ -18,6 +18,8 @@ export const PARAMS = {
   farmBias: 1.0,
   velBlend: 0.5, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
+  dodge: 1,
+  laserRange: 150,
 };
 
 const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
@@ -303,6 +305,7 @@ export class Bot {
       let want = P.wantRange;
       if (target.weapons && target.weapons.includes("lightning")) want = Math.max(want, 80);
       if (light && !laser) want = Math.min(want, 34);
+      if (laser && !(target.weapons && target.weapons.includes("lightning"))) want = Math.max(want, P.laserRange);
       if (this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
       if (z.radius < 80) want = Math.min(want, z.radius * 0.9);
       mv = dodge(target, want); label = "fight " + target.id;
@@ -376,6 +379,62 @@ export class Bot {
         if (n < 1) { ax = -pr.vel[1]; ay = pr.vel[0]; }
         const nn = hyp(ax, ay) || 1; ax /= nn; ay /= nn;
         if (m.walkable(X + ax * 5, Y + ay * 5)) { mv = [ax, ay]; boost = me.energy > 5; label = "shell"; }
+      }
+    }
+
+    // --- bullet dodging: pick the move whose next 0.6 s path the visible bullets miss ---
+    if (P.dodge && label !== "shell") {
+      const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
+      const bl = [];
+      for (const pr of obs.projectiles || []) {
+        if (pr.kind !== "gun" && pr.kind !== "npc") continue;
+        const rx = X - pr.pos[0], ry = Y - pr.pos[1], vv = pr.vel[0] * pr.vel[0] + pr.vel[1] * pr.vel[1];
+        if (vv < 1) continue;
+        const tc = (rx * pr.vel[0] + ry * pr.vel[1]) / vv; // time of closest approach to where we are
+        if (tc < -0.05 || tc > 0.9) continue;
+        if (Math.abs(rx * pr.vel[1] - ry * pr.vel[0]) / Math.sqrt(vv) > 14) continue;
+        bl.push(pr);
+      }
+      if (bl.length) {
+        const spd = (boost && me.energy > 5 ? me.stats.boost_speed : me.stats.walk_speed);
+        const risk = (dx, dy, bst) => {
+          const sp = bst ? me.stats.boost_speed : me.stats.walk_speed;
+          let vx = me.vel[0], vy = me.vel[1], px = X, py = Y, r = 0;
+          const tvx = dx * sp, tvy = dy * sp, st = 0.04;
+          const hitT = new Array(bl.length).fill(false);
+          for (let k = 1; k <= 18; k++) {
+            let ax = tvx - vx, ay = tvy - vy; const al = Math.hypot(ax, ay), mx = acc * st; if (al > mx) { ax *= mx / al; ay *= mx / al; }
+            vx += ax; vy += ay; px += vx * st; py += vy * st;
+            const tt = k * st;
+            for (let b = 0; b < bl.length; b++) {
+              if (hitT[b]) continue; const pr = bl[b];
+              const bx = pr.pos[0] + pr.vel[0] * tt, by = pr.pos[1] + pr.vel[1] * tt, bz = pr.pos[2] + pr.vel[2] * tt;
+              // segment of bullet travel over this step vs our cylinder
+              const sx = pr.vel[0] * st, sy = pr.vel[1] * st;
+              const qx = px - bx, qy = py - by, ss = sx * sx + sy * sy;
+              let u = ss > 0 ? (qx * -sx + qy * -sy) / ss : 0; u = clamp(u, 0, 1);
+              const cx = bx - sx * u, cy = by - sy * u;
+              if (Math.hypot(px - cx, py - cy) < R && bz > Z - 0.5 && bz < Z + H + 0.5 && !m.solid[m.cellOf(cx, cy)]) { hitT[b] = true; r += pr.kind === "gun" ? 1 : 0.5; }
+            }
+          }
+          return r;
+        };
+        const wl = Math.hypot(mv[0], mv[1]);
+        const base = risk(wl > 0.01 ? mv[0] / wl : 0, wl > 0.01 ? mv[1] / wl : 0, boost);
+        if (base > 0) {
+          let best = null, bs = base * 10;
+          const pref = wl > 0.01 ? Math.atan2(mv[1], mv[0]) : null;
+          for (let k = 0; k < 12; k++) {
+            const a = (k / 12) * TAU, dx = Math.cos(a), dy = Math.sin(a);
+            if (!m.walkable(X + dx * 4, Y + dy * 4) || !this.okPos(X + dx * 5, Y + dy * 5)) continue;
+            for (const bst of [false, me.energy > 10]) {
+              const r = risk(dx, dy, bst);
+              const sc = r * 10 + (pref == null ? 0 : (1 - Math.cos(a - pref)) * 0.8) + (bst ? 0.1 : 0);
+              if (sc < bs) { bs = sc; best = [dx, dy, bst]; }
+            }
+          }
+          if (best) { mv = [best[0], best[1]]; boost = best[2]; label += "+dodge"; }
+        }
       }
     }
 

@@ -143,7 +143,7 @@ export class Match {
     const z = this.zone();
     const ob = { type: "obs", tick: this.tick, t: this.t, alive: this.alive,
       self: { id: m.id, pos: m.pos.slice(), vel: m.vel.slice(), aim: m.aim.slice(), hp: m.hp, max_hp: this.maxHp(m), energy: m.energy, max_energy: m.stats.energy, grounded: true, cubes: m.cubes, upgrades: m.upgrades.slice(), in_zone: hyp(m.pos[0] - z.center[0], m.pos[1] - z.center[1]) <= z.radius, weapons: ws, stats: { ...m.stats, muzzle_height: 7 * this.scale(m), eye_height: 8 * this.scale(m) } },
-      mechs, projectiles: this.projs.filter((p) => p.owner !== m && hyp(p.pos[0] - m.pos[0], p.pos[1] - m.pos[1]) < 200).map((p) => ({ id: p.id, kind: p.kind, pos: p.pos.slice(), vel: p.vel.slice() })),
+      mechs, projectiles: this.projs.filter((p) => p.owner !== m && this.visible(m, p, p.pos[2])).map((p) => ({ id: p.id, kind: p.kind, pos: p.pos.slice(), vel: p.vel.slice() })),
       crates: vis(this.crates, 1.2).map((c) => ({ id: c.id, pos: c.pos.slice(), hp: c.hp })), cubes: vis(this.cubes, 0.5).map((c) => ({ id: c.id, pos: c.pos.slice() })), pickups: vis(this.pickups, 0.5).map((c) => ({ id: c.id, kind: c.kind, pos: c.pos.slice() })),
       sounds: [], beams: [], events: m.events, drops: this.drops.filter((d) => !d.taken).map((d) => ({ id: d.id, pos: d.pos, radius: 8, lands_in: Math.max(0, d.land - this.t), capture_s: 4, progress: d.progress, holder: d.holder })), zone: z, offer: m.offer };
     m.events = [];
@@ -217,7 +217,7 @@ export class Match {
       if (w) {
         w.cooldown = Math.max(0, w.cooldown - dt); const ws = m.wst[w.kind];
         if (w.kind === "laser") {
-          const fireNow = () => { const frac = ws.min_frac + (1 - ws.min_frac) * clamp(w.charge / ws.charge, 0, 1); const h = this.rayHit(m, m.pos[0], m.pos[1], mz, dir[0], dir[1], dir[2], ws.range); if (h.o) this.damage(h.o, ws.damage * frac * dmul, m, "laser", m.pos); w.charge = 0; w.cooldown = ws.cooldown; w.held = 0; };
+          const fireNow = () => { m.laserShots = (m.laserShots || 0) + 1; const frac = ws.min_frac + (1 - ws.min_frac) * clamp(w.charge / ws.charge, 0, 1); const h = this.rayHit(m, m.pos[0], m.pos[1], mz, dir[0], dir[1], dir[2], ws.range); if (h.o) { if (h.o.kind === 'mech') m.laserHits = (m.laserHits || 0) + 1; this.damage(h.o, ws.damage * frac * dmul, m, "laser", m.pos); } w.charge = 0; w.cooldown = ws.cooldown; w.held = 0; };
           if (w.charge > 0) { if (c.fire[1]) { w.charge = Math.min(ws.charge, w.charge + dt); if (w.charge >= ws.charge) { w.held = (w.held || 0) + dt; if (w.held > ws.hold_s) fireNow(); } } else if (w.charge >= ws.min_charge) fireNow(); else w.charge += dt; }
           else if (c.fire[1] && w.cooldown <= 0) w.charge = dt;
         } else if (w.kind === "lightning") {
