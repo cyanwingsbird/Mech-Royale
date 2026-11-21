@@ -8,7 +8,7 @@ const hyp = Math.hypot;
 
 export const PARAMS = {
   wantRange: 110, // preferred gun duel distance
-  retreatHp: 0.37, // go to cover below this
+  retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
   strafeMin: 0.35, strafeMax: 0.95,
@@ -26,7 +26,7 @@ export const PARAMS = {
   lightClose: 1,
   unstickBoost: 1,
   eagerReload: 0,
-  seek: 0, seekHp: 0.8,
+  seek: 1, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 0,
   kite: 0,
