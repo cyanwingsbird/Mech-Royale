@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 2, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
