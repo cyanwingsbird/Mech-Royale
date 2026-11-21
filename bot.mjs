@@ -19,7 +19,7 @@ export const PARAMS = {
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 200,
   dodge: 1,
-  explore: 0,
+  explore: 1,
   pickyEngage: 0,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
@@ -32,8 +32,8 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, noLight: 0, evade: 0, evadeAfter: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
-  laserRange: 150,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
@@ -459,6 +459,7 @@ export class Bot {
     // --- movement ---
     let mv = [0, 0], boost = false, jump = false, label = "idle";
     let farmTgt = null; // non-mech thing to shoot
+    let rushP = null;
     const threatsForCover = recent.filter((e) => t - e.seenT < 4).sort((a, b) => a.dist - b.dist);
 
     const dodge = (ref, want) => {
@@ -602,7 +603,19 @@ export class Bot {
         if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
         label = "kite " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
-      if (P.evade && !this.ffa && this.myKills >= P.evadeAfter) { mv = dodge(target, P.evade); boost = me.energy > 40 && target.dist < P.evade * 0.7; label = "evade " + target.id; }
+      if (P.kb && laser && !this.ffa && target.dist < P.laserRange - 15 && !(target.weapons || []).includes("lightning") || (P.kb && laser && !this.ffa && target.dist < 60)) {
+        // sniper: back straight off to laser range (they barely hit beyond ~150 m), sprint when close
+        const ax = X - target.pos[0], ay = Y - target.pos[1], an = hyp(ax, ay) || 1;
+        let best = null, bs = -1e9;
+        for (let k = -4; k <= 4; k++) {
+          const a = Math.atan2(ay, ax) + k * 0.3, vx = Math.cos(a), vy = Math.sin(a);
+          if (!m.walkable(X + vx * 5, Y + vy * 5) || !m.walkable(X + vx * 10, Y + vy * 10) || !this.okPos(X + vx * 12, Y + vy * 12)) continue;
+          const sc = Math.cos(k * 0.3) - (hyp(X + vx * 12 - z.next_center[0], Y + vy * 12 - z.next_center[1]) > z.next_radius - 10 ? 2 : 0);
+          if (sc > bs) { bs = sc; best = [vx, vy]; }
+        }
+        if (best) { mv = best; boost = target.dist < P.kbBoost && me.energy > 25; label = "kb " + target.id; }
+      }
+      if (P.evade && !this.ffa && this.myKills >= P.evadeAfter && (!P.evadeNoLaser || !laser)) { mv = dodge(target, P.evade); boost = me.energy > 40 && target.dist < P.evade * 0.7; label = "evade " + target.id; }
       if (P.grabR && !laser && (!this.retreating || P.grabRetreat)) {
         // a laser lying close by is worth more than a few seconds of strafing: go and take it while shooting
         let gp = null, gd = 1e9;
@@ -611,7 +624,7 @@ export class Bot {
           if (!(isL || isE) || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
           const d = hyp(p.pos[0] - X, p.pos[1] - Y) * (isL ? 1 : P.grabLight); if (d < Math.min(gd, P.grabR)) { gd = d; gp = p; }
         }
-        if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab " + gp.kind; }
+        if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab " + gp.kind; if (P.boostLaser && gd > 12 && me.energy > 20) boost = true; }
       }
     } else if (P.duck && this.snipedBy(t)) {
       const e = this.snipedBy(t);
@@ -623,6 +636,14 @@ export class Bot {
       farmTgt = npcFoe; mv = dodge(npcFoe, 70); label = "npc fight";
     } else {
       // --- no target: loot / farm / position ---
+      rushP = null;
+      if (P.rushR && !laser) {
+        let rd = P.rushR;
+        for (const p of this.pickups.values()) {
+          if (p.kind !== "laser" || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
+          const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < rd) { rd = d; rushP = p; }
+        }
+      }
       const hot = recent.filter((e) => t - e.seenT < 5 && e.dist < P.quietR);
       const quiet = hot.length === 0 && !underFire;
       let best = null, bs = 1e9;
@@ -640,7 +661,7 @@ export class Bot {
       };
       for (const c of this.cubes.values()) consider("cube", c, 0.6);
       const PW = { laser: 0.35, lightning: 0.9, mortar: 1.3 };
-      for (const p of this.pickups.values()) if (pickSlot(p.kind) !== -1) consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
+      for (const p of this.pickups.values()) if (pickSlot(p.kind) !== -1) consider("pickup", p, (p.kind === "laser" ? P.pwL : p.kind === "lightning" ? P.pwE : (PW[p.kind] ?? 1.2)) * (w1 ? 1.3 : 1));
       for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
         for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias * (laser ? 1 : P.crateNoLaser), 15 * P.farmBias * (laser ? 1 : P.crateNoLaser));
@@ -693,6 +714,7 @@ export class Bot {
           if (best.kind === "drop" && best.d < 4) mv = [0, 0];
           if (best.kind === "pickup" && best.d < 3.6 && pickSlot(o.kind) !== -1) { act.take = o.id; const ds = pickSlot(o.kind); if (ds != null) act.drop = ds; }
           boost = best.kind !== "drop" && best.d > 25 && me.energy > 60 && quiet;
+          if (P.boostLaser && best.kind === "pickup" && o.kind === "laser" && !laser && best.d > 12 && me.energy > 20) boost = true;
           label = "get " + best.kind;
         }
       } else if (this.retreating || (hot.length && hpF < 0.8)) {
@@ -727,6 +749,13 @@ export class Bot {
         }
         else label = "wait";
       }
+    }
+    if (rushP && !label.startsWith("zone")) {
+      const d = hyp(rushP.pos[0] - X, rushP.pos[1] - Y);
+      const nv = this.navTo(rushP.pos[0], rushP.pos[1], t); mv = [nv[0], nv[1]];
+      boost = d > 10 && me.energy > 15;
+      if (d < 3.6 && pickSlot(rushP.kind) !== -1) { act.take = rushP.id; const ds = pickSlot(rushP.kind); if (ds != null) act.drop = ds; }
+      label = "rush laser";
     }
     // pick up weapons we walk past, even mid-fight
     if (act.take == null) for (const p of obs.pickups || []) {
