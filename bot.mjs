@@ -7,7 +7,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const hyp = Math.hypot;
 
 export const PARAMS = {
-  wantRange: 110, // preferred gun duel distance
+  wantRange: 140, // preferred gun duel distance
   retreatHp: 0.42, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
@@ -20,8 +20,9 @@ export const PARAMS = {
   ffaEngage: 130,
   dodge: 1,
   laserRange: 150,
-  camp: 1, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
+  camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
+  climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
 
 const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
@@ -354,8 +355,13 @@ export class Bot {
       let best = null, bs = 1e9;
       const consider = (kind, o, w, extra = 0) => {
         if (!this.okPos(o.pos[0], o.pos[1])) return;
-        if (m.solid[m.cellOf(o.pos[0], o.pos[1])] || o.pos[2] > m.groundAt(o.pos[0], o.pos[1]) + 4) return; // on a roof
-        const d = hyp(o.pos[0] - X, o.pos[1] - Y);
+        let roofPen = 0;
+        if (m.solid[m.cellOf(o.pos[0], o.pos[1])] || o.pos[2] > m.groundAt(o.pos[0], o.pos[1]) + 4) { // on a roof
+          const h = o.pos[2] - Z;
+          if (!(P.climb && kind === "pickup" && o.kind === "laser" && h < 42 && !(this.noClimb && this.noClimb.has(o.id)))) return;
+          roofPen = 10 + h * 1.2;
+        } else if (P.climbTest && kind === "pickup") return;
+        const d = hyp(o.pos[0] - X, o.pos[1] - Y) + roofPen;
         if (this.ffa) for (const e of recent) if (hyp(e.pos[0] - o.pos[0], e.pos[1] - o.pos[1]) < 90) return;
         const s = d * w + extra; if (s < bs) { bs = s; best = { kind, o, d }; }
       };
@@ -393,6 +399,23 @@ export class Bot {
           if (vis) { farmTgt = { ...o, kind: best.kind, vel: o.vel || [0, 0, 0] }; if (best.kind === "npc") mv = dodge(o, 65); else if (best.d > 30) { const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]]; } }
           else { const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]]; }
           label = "farm " + best.kind;
+        } else if (best.kind === "pickup" && (m.solid[m.cellOf(o.pos[0], o.pos[1])] || o.pos[2] > m.groundAt(o.pos[0], o.pos[1]) + 4)) {
+          // roof item: walk to the building, then jump and jet up while pushing toward it
+          const hd = hyp(o.pos[0] - X, o.pos[1] - Y), h = o.pos[2] - Z;
+          if (this.climbId !== o.id) { this.climbId = o.id; this.climbT0 = t; }
+          if (t - this.climbT0 > 25) { (this.noClimb ??= new Set()).add(o.id); }
+          const near = hd < 16 || !m.comp[m.cellOf(X, Y)];
+          if (!near) { const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]]; label = "to roof"; }
+          else {
+            const need = Math.min(100, 1.6 * Math.max(0, h) + 12);
+            if (h > 1 && me.grounded && me.energy < need) { mv = [0, 0]; label = "charge jets"; }
+            else {
+              mv = hd > 0.5 ? [(o.pos[0] - X) / hd, (o.pos[1] - Y) / hd] : [0, 0];
+              if (h > 0.8) { if (me.grounded) jump = true; else boost = me.energy > 2; }
+              label = "climb";
+            }
+          }
+          if (hd < 3.6 && Math.abs(h) < 3.8) { act.take = o.id; if (w1) act.drop = 1; }
         } else {
           const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]];
           if (best.kind === "drop" && best.d < 4) mv = [0, 0];
@@ -436,7 +459,7 @@ export class Bot {
     }
 
     // --- bullet dodging: pick the move whose next 0.6 s path the visible bullets miss ---
-    if (P.dodge && label !== "shell") {
+    if (P.dodge && label !== "shell" && label !== "climb") {
       const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
       const bl = [];
       for (const pr of obs.projectiles || []) {
@@ -498,11 +521,13 @@ export class Bot {
       const h0 = this.hist[0];
       if (hyp(X - h0[1], Y - h0[2]) < 1.2 && !(laser && laser.charge > 0)) { this.stuckT = t; this.unstuckDir = (this.rnd() < 0.5 ? -1 : 1) * (0.6 + this.rnd()); this.path = null; }
     }
-    if (t - this.stuckT < 0.7 && wantMove) {
+    const climbing = label === "climb" || label === "charge jets";
+    if (climbing) this.stuckT = -9;
+    if (t - this.stuckT < 0.7 && wantMove && !climbing) {
       const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = me.energy > 10; label = "unstick";
     }
     // off the nav mesh (roof / pit): head for the nearest open cell
-    if (!m.comp[m.cellOf(X, Y)] && wantMove) {
+    if (!m.comp[m.cellOf(X, Y)] && wantMove && !climbing) {
       const c = m.nearestOpen(X, Y); const dx = m.cx(c) - X, dy = m.cy(c) - Y, d = hyp(dx, dy);
       if (d > 0.5 && Z > m.ground[c] + 2.5) mv = [dx / d, dy / d];
     }
@@ -575,7 +600,7 @@ export class Bot {
       act.pick = bi;
     }
     act.move = [Math.round(mv[0] * 1000) / 1000, Math.round(mv[1] * 1000) / 1000];
-    act.boost = !!boost && wantMove; act.jump = !!jump;
+    act.boost = !!boost && (wantMove || !me.grounded); act.jump = !!jump;
     if (aim) act.aim = [Math.round(wrap(aim[0]) * 10000) / 10000, Math.round(clamp(aim[1], me.stats.min_pitch ?? -0.7, me.stats.max_pitch ?? 1.3) * 10000) / 10000];
     act.fire = fire;
     this.label = label;
