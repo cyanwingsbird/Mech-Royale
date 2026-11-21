@@ -29,8 +29,8 @@ export const PARAMS = {
   seek: 0, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 0,
-  kite: 0,
-  headAim: 1, duck: 1,
+  kite: 0.5,
+  headAim: 0, duck: 0,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
