@@ -11,7 +11,7 @@ export const PARAMS = {
   retreatHp: 0.32, // go to cover below this
   returnHp: 0.85, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
-  strafeMin: 0.35, strafeMax: 0.95,
+  strafeMin: 0.25, strafeMax: 0.7,
   crateRange: 70, npcRange: 85,
   farmHp: 0.5,
   npcFarmHp: 0.6,
@@ -31,7 +31,6 @@ export const PARAMS = {
   laserHold: 0,
   kite: 0,
   headAim: 0, duck: 0,
-  dual: 0, // carry laser + lightning (drops the gun)
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -307,17 +306,9 @@ export class Bot {
     this.multiThreats = recent.filter((e) => t - e.seenT < 3 && e.dist < 220).sort((a, b) => a.dist - b.dist).slice(0, 4);
 
     // --- pick a shooting target ---
-    const slotOf = (k) => me.weapons.findIndex((w) => w && w.kind === k);
-    const gS = slotOf("gun"), lS = slotOf("laser"), eS = slotOf("lightning"), mS = slotOf("mortar");
-    const gun = gS >= 0 ? me.weapons[gS] : null, laser = lS >= 0 ? me.weapons[lS] : null, light = eS >= 0 ? me.weapons[eS] : null, mortar = mS >= 0 ? me.weapons[mS] : null;
+    const gun = me.weapons[0] && me.weapons[0].kind === "gun" ? me.weapons[0] : null;
     const w1 = me.weapons[1];
-    // which slot a pickup of this kind should go into: null = empty slot, 0/1 = replace that slot, -1 = not wanted
-    const pickSlot = (kind) => {
-      if (kind === "gun" || slotOf(kind) >= 0) return -1;
-      if (P.dual && gun && ((kind === "lightning" && laser) || (kind === "laser" && light))) return gS; // laser + lightning, drop the gun
-      if (!w1) return null;
-      return (WRANK[kind] ?? 0) > (WRANK[w1.kind] ?? 0) ? 1 : -1;
-    };
+    const laser = w1 && w1.kind === "laser" ? w1 : null, light = w1 && w1.kind === "lightning" ? w1 : null, mortar = w1 && w1.kind === "mortar" ? w1 : null;
     const maxRange = Math.max(gun ? gun.stats.range * 0.96 : 0, laser ? laser.stats.range * 0.96 : 0, 60);
     const dmgMul = 1 + cfg.cubes.damage_per_cube * Math.min(me.cubes, cfg.cubes.stat_cap);
     const myDps = (gun ? gun.stats.damage / gun.stats.cooldown * 0.6 : 0) * dmgMul + (laser ? 120 : 0) + 1;
@@ -458,8 +449,9 @@ export class Bot {
         const s = d * w + extra; if (s < bs) { bs = s; best = { kind, o, d }; }
       };
       for (const c of this.cubes.values()) consider("cube", c, 0.6);
+      const haveRank = w1 ? WRANK[w1.kind] ?? 0 : -1;
       const PW = { laser: 0.35, lightning: 0.9, mortar: 1.3 };
-      for (const p of this.pickups.values()) if (pickSlot(p.kind) !== -1) consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
+      for (const p of this.pickups.values()) if ((WRANK[p.kind] ?? 0) > haveRank && p.kind !== "gun") consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
       for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
         for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias, 15 * P.farmBias);
@@ -506,11 +498,11 @@ export class Bot {
               label = "climb";
             }
           }
-          if (hd < 3.6 && Math.abs(h) < 3.8 && pickSlot(o.kind) !== -1) { act.take = o.id; const ds = pickSlot(o.kind); if (ds != null) act.drop = ds; }
+          if (hd < 3.6 && Math.abs(h) < 3.8) { act.take = o.id; if (w1) act.drop = 1; }
         } else {
           const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]];
           if (best.kind === "drop" && best.d < 4) mv = [0, 0];
-          if (best.kind === "pickup" && best.d < 3.6 && pickSlot(o.kind) !== -1) { act.take = o.id; const ds = pickSlot(o.kind); if (ds != null) act.drop = ds; }
+          if (best.kind === "pickup" && best.d < 3.6) { act.take = o.id; if (w1) act.drop = 1; }
           boost = best.kind !== "drop" && best.d > 25 && me.energy > 60 && quiet;
           label = "get " + best.kind;
         }
@@ -549,8 +541,8 @@ export class Bot {
     }
     // pick up weapons we walk past, even mid-fight
     if (act.take == null) for (const p of obs.pickups || []) {
-      const ds = pickSlot(p.kind);
-      if (ds !== -1 && hyp(p.pos[0] - X, p.pos[1] - Y) < 3.7 && Math.abs(p.pos[2] - Z) < 3.8 && !(laser && laser.charge > 0)) { act.take = p.id; if (ds != null) act.drop = ds; break; }
+      const haveRank = w1 ? WRANK[w1.kind] ?? 0 : -1;
+      if ((WRANK[p.kind] ?? 0) > haveRank && hyp(p.pos[0] - X, p.pos[1] - Y) < 3.7 && Math.abs(p.pos[2] - Z) < 3.8 && !(laser && laser.charge > 0)) { act.take = p.id; if (w1) act.drop = 1; break; }
     }
 
     // --- incoming mortar shells ---
@@ -669,17 +661,17 @@ export class Bot {
           const lx = Math.cos(D.yaw), ly = Math.sin(D.yaw);
           const vlat = Math.abs(-ly * (shootAt.vel[0] - me.vel[0]) + lx * (shootAt.vel[1] - me.vel[1]));
           const steady = !P.laserTiming || vlat < P.laserVlat || D.dist < 45 || (this.laserFullT != null && t - this.laserFullT > P.laserWait);
-          if (ch >= need && steady && ey < tolY + slack * 0.5 && epi < tolP + 0.05) { fire[lS] = false; this.laserFullT = null; } // release
-          else fire[lS] = true;
-        } else if (ch > 0) { fire[lS] = P.laserHold ? true : false; if (P.laserHold) aim = [D.yaw, D.pitch]; } // keep the charge aimed instead of wasting it
+          if (ch >= need && steady && ey < tolY + slack * 0.5 && epi < tolP + 0.05) { fire[1] = false; this.laserFullT = null; } // release
+          else fire[1] = true;
+        } else if (ch > 0) { fire[1] = P.laserHold ? true : false; if (P.laserHold) aim = [D.yaw, D.pitch]; } // keep the charge aimed instead of wasting it
         if (isMech) this.lastShotAt = { x: shootAt.pos[0], y: shootAt.pos[1], z: this.centerZ(shootAt), t };
       }
       if (gunReady && L.dist + 0 < gun.stats.range * 0.97) {
         const ey = Math.abs(wrap(me.aim[0] - L.yaw)), epi = Math.abs(me.aim[1] - L.pitch);
         const tolY = Math.atan2(rad * (isMech ? 1.0 : 0.8), L.dist), tolP = Math.atan2(isMech ? (shootAt.aimZoff > 6 ? 1.2 : 4) : 1.2, L.dist);
-        if (ey < tolY + slack && epi < tolP + 0.04) { fire[gS] = true; if (isMech) this.shots += this.dt / gun.stats.cooldown; }
+        if (ey < tolY + slack && epi < tolP + 0.04) { fire[0] = true; if (isMech) this.shots += this.dt / gun.stats.cooldown; }
       }
-      if (light && isMech && D.dist < light.stats.range * 0.97 && Math.abs(wrap(me.aim[0] - D.yaw)) < (light.stats.cone_deg * Math.PI / 180) * 0.85 && me.energy > 8) fire[eS] = true;
+      if (light && isMech && D.dist < light.stats.range * 0.97 && Math.abs(wrap(me.aim[0] - D.yaw)) < (light.stats.cone_deg * Math.PI / 180) * 0.85 && me.energy > 8) fire[1] = true;
       if (mortar && isMech && !gunReady && D.dist > 22 && D.dist < 190 && mortar.cooldown <= 0.15) {
         const v = mortar.stats.speed; let tt = D.dist / (v * 0.9), sol = null;
         for (let k = 0; k < 3; k++) {
@@ -690,12 +682,12 @@ export class Bot {
           const th = Math.atan2(v * v - Math.sqrt(disc), g * d);
           tt = d / (v * Math.cos(th)); sol = [Math.atan2(py - Y, px - X), th];
         }
-        if (sol) { aim = sol; if (Math.abs(wrap(me.aim[0] - sol[0])) < 0.05 && Math.abs(me.aim[1] - sol[1]) < 0.04) fire[mS] = true; }
+        if (sol) { aim = sol; if (Math.abs(wrap(me.aim[0] - sol[0])) < 0.05 && Math.abs(me.aim[1] - sol[1]) < 0.04) fire[1] = true; }
       }
     } else {
-      if (laser && (laser.charge || 0) > 0) fire[lS] = false;
+      if (laser && (laser.charge || 0) > 0) fire[1] = false;
       const holdLaser = P.laserHold && laser && (laser.charge || 0) > 0 && this.lastShotAt && t - this.lastShotAt.t < 4;
-      if (holdLaser) fire[lS] = true;
+      if (holdLaser) fire[1] = true;
       // look: at whoever hurt us, at last known enemy, at a sound, else sweep along travel
       const lastE = recent.filter((e) => t - e.seenT < 6).sort((a, b) => a.dist - b.dist)[0];
       if (t - this.lastDmgT < 2 && this.lastDmgBearing != null && !(lastE && lastE.fresh)) aim = [this.lastDmgBearing, 0];
