@@ -29,6 +29,7 @@ export const PARAMS = {
   seek: 0, seekHp: 0.8,
   laserTiming: 0, laserVlat: 4, laserWait: 1.2,
   laserHold: 1,
+  kite: 0.5,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -412,6 +413,14 @@ export class Bot {
         const dcamp = hyp(this.camp[0] - X, this.camp[1] - Y);
         if (dcamp > P.campFightLeash) { const nv = this.navTo(this.camp[0], this.camp[1], t); mv = [nv[0], nv[1]]; }
         label = "hold " + target.id;
+      } else if (P.kite && attackers.length >= 2) {
+        // outnumbered: back away from the group while strafing so they arrive one at a time
+        let cx = 0, cy = 0; for (const e of attackers) { cx += e.pos[0]; cy += e.pos[1]; } cx /= attackers.length; cy /= attackers.length;
+        const ax = X - cx, ay = Y - cy, an = hyp(ax, ay) || 1;
+        const sv = dodge(target, want);
+        let vx = ax / an * P.kite + sv[0] * (1 - P.kite), vy = ay / an * P.kite + sv[1] * (1 - P.kite); const vn = hyp(vx, vy) || 1; vx /= vn; vy /= vn;
+        if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
+        label = "kite " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
     } else if (this.snipedBy(t)) {
       const e = this.snipedBy(t);
