@@ -39,7 +39,7 @@ export const PARAMS = {
 
 const UPG = ["plating", "armor", "gun_damage", "nanites", "gun_rate", "laser_damage", "laser_charge", "servos", "gun_mag", "gun_velocity",
   "lightning_efficiency", "reactor", "capacitor", "gyros", "lightning_range", "lightning_chain", "jets", "mortar_reload", "sensors"];
-const WRANK = { laser: 3, lightning: 2, mortar: 1, gun: 0 };
+const WRANK = { laser: 2, lightning: 3, mortar: 1, gun: 0 };
 
 export class Bot {
   constructor(hello, map, params = {}) {
@@ -450,7 +450,7 @@ export class Bot {
       };
       for (const c of this.cubes.values()) consider("cube", c, 0.6);
       const haveRank = w1 ? WRANK[w1.kind] ?? 0 : -1;
-      const PW = { laser: 0.35, lightning: 0.9, mortar: 1.3 };
+      const PW = { laser: 0.9, lightning: 0.35, mortar: 1.3 };
       for (const p of this.pickups.values()) if ((WRANK[p.kind] ?? 0) > haveRank && p.kind !== "gun") consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
       for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
