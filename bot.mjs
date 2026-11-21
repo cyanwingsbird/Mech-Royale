@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 0, laserDodge: 0, ldStart: 0.4, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 1, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -425,6 +425,7 @@ export class Bot {
       const hostile = (e.hitMeT && t - e.hitMeT < 6) || e.aimingAtMe;
       if ((this.ffa || P.pickyEngage) && !hostile && e.dist > P.ffaEngage && e.hp > 0.5 * e.max_hp) continue;
       let s = (e.hp ?? 1400) / myDps + e.dist / 50 - (hostile ? 2 : 0) - (e.id === this.tgtId ? 1.5 : 0);
+      if (P.laserTgt && !laser && (e.weapons || []).includes("laser")) s -= P.laserTgt;
       if (P.threatW) {
         const ew = e.weapons || [];
         const theirDps = (ew.includes("laser") ? 130 : 0) + (ew.includes("lightning") && e.dist < 55 ? 240 : 0) + (ew.includes("mortar") ? 70 : 0);
@@ -640,7 +641,7 @@ export class Bot {
       for (const p of this.pickups.values()) if (pickSlot(p.kind) !== -1) consider("pickup", p, (PW[p.kind] ?? 1.2) * (w1 ? 1.3 : 1));
       for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
-        for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias, 15 * P.farmBias);
+        for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias * (laser ? 1 : P.crateNoLaser), 15 * P.farmBias * (laser ? 1 : P.crateNoLaser));
         if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias, 30 * P.farmBias);
       }
       if (!quiet && best && best.d > 45 && hpF < 0.8) best = null;
