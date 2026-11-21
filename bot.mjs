@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  laserDodge: 0, ldStart: 0.4, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, spin0: 0, laserDodge: 0, ldStart: 0.4, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -600,6 +600,15 @@ export class Bot {
         if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
         label = "kite " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
+      if (P.grabR && !laser && !this.retreating) {
+        // a laser lying close by is worth more than a few seconds of strafing: go and take it while shooting
+        let gp = null, gd = P.grabR;
+        for (const p of this.pickups.values()) {
+          if (p.kind !== "laser" || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
+          const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < gd) { gd = d; gp = p; }
+        }
+        if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab laser"; }
+      }
     } else if (P.duck && this.snipedBy(t)) {
       const e = this.snipedBy(t);
       const cov = this.findCover([e, ...threatsForCover.filter((x) => x !== e)], t);
@@ -746,7 +755,23 @@ export class Bot {
         if (Math.abs(wrap(e.aim[0] - Math.atan2(dy, dx))) > Math.max(0.05, 6 / d)) continue;
         if (!th || d < td) { th = e; td = d; }
       }
-      if (th) {
+      if (th && P.laserDodge === 3) {
+        // step out of the beam's line of sight if cover is close enough to reach before it fires
+        const left = Math.max(0.15, th.stats?.charge ?? 0.75) - (t - th.chargeT) + 0.15;
+        const sp = me.energy > (light ? 40 : 10) ? me.stats.boost_speed : me.stats.walk_speed;
+        let best = null, bd = 1e9;
+        for (const r of [2.5, 4, 6, 8]) {
+          if (r > sp * left + 1.5) break;
+          for (let k = 0; k < 16; k++) {
+            const a = (k / 16) * TAU, vx = Math.cos(a), vy = Math.sin(a), qx = X + vx * r, qy = Y + vy * r;
+            if (!m.walkable(qx, qy) || !m.walkable(X + vx * r * 0.5, Y + vy * r * 0.5)) continue;
+            if (this.seesMe(th, qx, qy, m.groundAt(qx, qy))) continue;
+            if (r < bd) { bd = r; best = [vx, vy]; }
+          }
+          if (best) break;
+        }
+        if (best) { mv = best; boost = me.energy > (light ? 40 : 10); label += "+lcover"; }
+      } else if (th) {
         const ux = (X - th.pos[0]) / td, uy = (Y - th.pos[1]) / td, px = -uy, py = ux;
         const vl = me.vel[0] * px + me.vel[1] * py;
         let sg = vl >= 0 ? 1 : -1; if (P.laserDodge === 1) sg = -sg; // 1 = reverse lateral motion, 2 = keep going
@@ -754,7 +779,7 @@ export class Bot {
         if (m.walkable(X + px * sg * 4, Y + py * sg * 4)) { mv = [px * sg, py * sg]; boost = me.energy > (light ? 40 : 10); label += "+ldodge"; }
       }
     }
-    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !label.endsWith("+ldodge")) {
+    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !label.endsWith("+ldodge") && !label.endsWith("+lcover")) {
       const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
       const bl = [];
       for (const pr of obs.projectiles || []) {
@@ -886,6 +911,7 @@ export class Bot {
       if (t - this.lastDmgT < 2 && this.lastDmgBearing != null && !(lastE && lastE.fresh)) aim = [this.lastDmgBearing, 0];
       else if (lastE) aim = [Math.atan2(lastE.pos[1] - Y, lastE.pos[0] - X), clamp(Math.atan2(this.centerZ(lastE) - Z - 7, lastE.dist || 1), -0.5, 0.8)];
       else if (t - this.soundT < 1.5 && this.soundYaw != null) aim = [this.soundYaw, 0];
+      else if (P.spin0 && t < P.spin0) aim = [wrap(me.aim[0] + 2), 0]; // look all around once at the start
       else {
         const base = wantMove ? Math.atan2(mv[1], mv[0]) : (this.scanBase ?? me.aim[0]);
         if (wantMove) { this.scanBase = base; aim = [base + 1.15 * Math.sin(t * 1.3), 0]; }
