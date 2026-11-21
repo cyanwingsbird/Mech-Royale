@@ -16,11 +16,11 @@ export const PARAMS = {
   farmHp: 0.5,
   npcFarmHp: 0.6,
   farmBias: 1.0,
-  velBlend: 0.3, // lead on blend of instantaneous and smoothed velocity
+  velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
   dodge: 1,
-  explore: 0,
-  pickyEngage: 0,
+  explore: 1,
+  pickyEngage: 1,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
   lightClose: 1,
