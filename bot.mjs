@@ -13,8 +13,8 @@ export const PARAMS = {
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
   strafeMin: 0.35, strafeMax: 0.95,
   crateRange: 70, npcRange: 85,
-  farmHp: 0.5,
-  npcFarmHp: 0.6,
+  farmHp: 0.7,
+  npcFarmHp: 0.8,
   farmBias: 1.0,
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
@@ -25,6 +25,8 @@ export const PARAMS = {
   dropW: 0.7, dropLead: 12,
   lightClose: 0,
   unstickBoost: 1,
+  eagerReload: 0,
+  seek: 1, seekHp: 0.8,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -166,6 +168,22 @@ export class Bot {
       if (sc > bs) { bs = sc; best = [cx, cy]; }
     }
     return best;
+  }
+
+  // where to look for a fight: nearest enemy seen in the last 40 s, else the last near/mid gunshot
+  seekGoal(t) {
+    const me = this.me; let best = null, bd = 1e9;
+    for (const e of this.en.values()) {
+      if (t - e.seenT > 40) continue;
+      const d = hyp(e.pos[0] - me.pos[0], e.pos[1] - me.pos[1]);
+      if (d < bd && this.okPos(e.pos[0], e.pos[1])) { bd = d; best = [e.pos[0], e.pos[1]]; }
+    }
+    if (best) return best;
+    if (this.soundYaw != null && t - this.soundT < 8) {
+      const r = 90; const x = me.pos[0] + Math.cos(this.soundYaw) * r, y = me.pos[1] + Math.sin(this.soundYaw) * r;
+      if (this.okPos(x, y)) return [x, y];
+    }
+    return null;
   }
 
   // an enemy that shot us in the last 2 s and that we cannot shoot back at
@@ -487,6 +505,9 @@ export class Bot {
         const r = Math.max(0, Math.min(z.next_radius * 0.6, z.next_radius - 20));
         const gx = z.next_center[0] + Math.cos(a) * r, gy = z.next_center[1] + Math.sin(a) * r;
         if (hyp(gx - X, gy - Y) > 14 && (dN > z.next_radius - 15 || this.zonePull)) { const nv = this.navTo(gx, gy, t); mv = [nv[0] * 0.42, nv[1] * 0.42]; if (this.zonePull) mv = [nv[0], nv[1]]; label = "drift"; }
+        else if (P.seek && !this.ffa && hpF > P.seekHp && (laser || me.cubes >= 3) && this.seekGoal(t)) {
+          const g2 = this.seekGoal(t); const nv = this.navTo(g2[0], g2[1], t); mv = [nv[0], nv[1]]; label = "seek";
+        }
         else if (P.explore && quiet && (!laser || me.cubes < 10)) {
           // nothing to do: walk to a fresh spot inside the next circle to find weapons, crates and cubes
           const ex = this.exploreTo;
@@ -660,7 +681,7 @@ export class Bot {
     }
     // reload when it is free to do so
     if (gun && gun.reload <= 0 && gun.ammo < gun.stats.mag) {
-      if (gun.ammo === 0 || (!shootAt && gun.ammo <= gun.stats.mag - 3 && losThreats.length === 0)) act.reload = true;
+      if (gun.ammo === 0 || (!shootAt && gun.ammo <= gun.stats.mag - 3 && losThreats.length === 0) || (P.eagerReload && !target && gun.ammo < gun.stats.mag * 0.6)) act.reload = true;
     }
     // --- upgrades ---
     if (obs.offer) {
