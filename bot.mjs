@@ -19,6 +19,7 @@ export const PARAMS = {
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 130,
   dodge: 1,
+  explore: 1,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -50,7 +51,10 @@ export class Bot {
   }
 
   // ---------- helpers ----------
-  centerZ(o) { return o.pos[2] + (o.kind === "npc" ? 1.75 : o.kind === "crate" ? 1.2 : 4.5 * (1 + 0.05 * (o.cubes || 0))); }
+  centerZ(o) {
+    if (o.kind === "mech" && o.aimZoff != null) return o.pos[2] + o.aimZoff;
+    return o.pos[2] + (o.kind === "npc" ? 1.75 : o.kind === "crate" ? 1.2 : 4.5 * (1 + 0.05 * (o.cubes || 0)));
+  }
   zoneNow() { return this.z; }
   okPos(x, y) {
     const z = this.z;
@@ -63,7 +67,16 @@ export class Bot {
     const ez = e.pos[2] + 7 * (1 + 0.05 * (e.cubes || 0));
     return this.map.los(e.pos[0], e.pos[1], ez, x, y, gz + 4.5 * this.scale) || this.map.los(e.pos[0], e.pos[1], ez, x, y, gz + 8.5 * this.scale);
   }
-  canHit(o) { const me = this.me; return this.map.los(me.pos[0], me.pos[1], me.pos[2] + this.muzzleH, o.pos[0], o.pos[1], this.centerZ(o)); }
+  canHit(o) {
+    const me = this.me, mz = me.pos[2] + this.muzzleH;
+    if (o.kind !== "mech") return this.map.los(me.pos[0], me.pos[1], mz, o.pos[0], o.pos[1], this.centerZ(o));
+    // try the body centre, then the upper torso and head (a mech on a roof often shows only its top)
+    const sc = 1 + 0.05 * (o.cubes || 0);
+    for (const dz of [4.5 * sc, 7 * sc, 8.3 * sc]) {
+      if (this.map.los(me.pos[0], me.pos[1], mz, o.pos[0], o.pos[1], o.pos[2] + dz)) { o.aimZoff = dz; return true; }
+    }
+    o.aimZoff = null; return false;
+  }
 
   navTo(gx, gy, t) {
     const me = this.me, m = this.map;
@@ -148,6 +161,13 @@ export class Bot {
       if (sc > bs) { bs = sc; best = [cx, cy]; }
     }
     return best;
+  }
+
+  // an enemy that shot us in the last 2 s and that we cannot shoot back at
+  snipedBy(t) {
+    if (t - this.lastDmgT > 2 || this.lastDmgBy == null) return null;
+    const e = this.en.get(this.lastDmgBy);
+    return e && !e.los ? e : null;
   }
 
   lead(o, speed, ahead) {
@@ -346,6 +366,12 @@ export class Bot {
         if (dcamp > P.campFightLeash) { const nv = this.navTo(this.camp[0], this.camp[1], t); mv = [nv[0], nv[1]]; }
         label = "hold " + target.id;
       } else { mv = dodge(target, want); label = "fight " + target.id; }
+    } else if (this.snipedBy(t)) {
+      const e = this.snipedBy(t);
+      const cov = this.findCover([e, ...threatsForCover.filter((x) => x !== e)], t);
+      if (cov) { const nv = this.navTo(cov[0], cov[1], t); mv = nv[2] > 2.2 ? [nv[0], nv[1]] : [0, 0]; boost = me.energy > 30 && nv[2] > 2.2; }
+      else mv = dodge(e, 400);
+      label = "duck";
     } else if (npcFoe && hpF > 0.3) {
       farmTgt = npcFoe; mv = dodge(npcFoe, 70); label = "npc fight";
     } else {
@@ -434,6 +460,22 @@ export class Bot {
         const r = Math.max(0, Math.min(z.next_radius * 0.6, z.next_radius - 20));
         const gx = z.next_center[0] + Math.cos(a) * r, gy = z.next_center[1] + Math.sin(a) * r;
         if (hyp(gx - X, gy - Y) > 14 && (dN > z.next_radius - 15 || this.zonePull)) { const nv = this.navTo(gx, gy, t); mv = [nv[0] * 0.42, nv[1] * 0.42]; if (this.zonePull) mv = [nv[0], nv[1]]; label = "drift"; }
+        else if (P.explore && quiet && (!laser || me.cubes < 10)) {
+          // nothing to do: walk to a fresh spot inside the next circle to find weapons, crates and cubes
+          const ex = this.exploreTo;
+          if (!ex || t > this.exploreUntil || hyp(ex[0] - X, ex[1] - Y) < 8 || !this.okPos(ex[0], ex[1])) {
+            let pick = null;
+            for (let k = 0; k < 20 && !pick; k++) {
+              const a = this.rnd() * TAU, r = 60 + this.rnd() * 120;
+              const px = X + Math.cos(a) * r, py = Y + Math.sin(a) * r;
+              if (hyp(px - z.next_center[0], py - z.next_center[1]) > z.next_radius * 0.85) continue;
+              const c = m.cellOf(px, py); if (!m.comp[c]) continue;
+              pick = [px, py];
+            }
+            this.exploreTo = pick || [z.next_center[0], z.next_center[1]]; this.exploreUntil = t + 25;
+          }
+          const nv = this.navTo(this.exploreTo[0], this.exploreTo[1], t); mv = [nv[0], nv[1]]; label = "explore";
+        }
         else label = "wait";
       }
     }
@@ -560,7 +602,7 @@ export class Bot {
       }
       if (gunReady && L.dist + 0 < gun.stats.range * 0.97) {
         const ey = Math.abs(wrap(me.aim[0] - L.yaw)), epi = Math.abs(me.aim[1] - L.pitch);
-        const tolY = Math.atan2(rad * (isMech ? 1.0 : 0.8), L.dist), tolP = Math.atan2(isMech ? 4 : 1.2, L.dist);
+        const tolY = Math.atan2(rad * (isMech ? 1.0 : 0.8), L.dist), tolP = Math.atan2(isMech ? (shootAt.aimZoff > 6 ? 1.2 : 4) : 1.2, L.dist);
         if (ey < tolY + slack && epi < tolP + 0.04) { fire[0] = true; if (isMech) this.shots += this.dt / gun.stats.cooldown; }
       }
       if (light && isMech && D.dist < light.stats.range * 0.97 && Math.abs(wrap(me.aim[0] - D.yaw)) < (light.stats.cone_deg * Math.PI / 180) * 0.85 && me.energy > 8) fire[1] = true;
