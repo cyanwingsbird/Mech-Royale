@@ -20,6 +20,7 @@ export const PARAMS = {
   ffaEngage: 130,
   dodge: 1,
   explore: 1,
+  pickyEngage: 1,
   laserRange: 150,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
@@ -288,7 +289,7 @@ export class Bot {
     for (const e of losThreats) {
       if (e.dist > maxRange) continue;
       const hostile = (e.hitMeT && t - e.hitMeT < 6) || e.aimingAtMe;
-      if (this.ffa && !hostile && e.dist > P.ffaEngage && e.hp > 0.5 * e.max_hp) continue;
+      if ((this.ffa || P.pickyEngage) && !hostile && e.dist > P.ffaEngage && e.hp > 0.5 * e.max_hp) continue;
       let s = (e.hp ?? 1400) / myDps + e.dist / 50 - (hostile ? 2 : 0) - (e.id === this.tgtId ? 1.5 : 0);
       if (s < bestS) { bestS = s; target = e; }
     }
