@@ -8,8 +8,8 @@ const hyp = Math.hypot;
 
 export const PARAMS = {
   wantRange: 130, // preferred gun duel distance
-  retreatHp: 0.32, // go to cover below this
-  returnHp: 0.85, // come back above this
+  retreatHp: 0.55, // go to cover below this
+  returnHp: 0.95, // come back above this
   outnumberStep: 0.14, // extra retreat threshold per additional attacker
   strafeMin: 0.35, strafeMax: 0.95,
   crateRange: 70, npcRange: 85,
@@ -19,7 +19,7 @@ export const PARAMS = {
   velBlend: 0.2, // lead on blend of instantaneous and smoothed velocity
   ffaEngage: 200,
   dodge: 1,
-  explore: 1,
+  explore: 0,
   pickyEngage: 0,
   coverStrafe: 0,
   dropW: 0.7, dropLead: 12,
@@ -32,7 +32,7 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 220, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
