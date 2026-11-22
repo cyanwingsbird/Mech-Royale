@@ -155,6 +155,35 @@ export class GameMap {
     this.heap = new Int32Array(N * 2); this.heapF = new Float32Array(N * 2);
     this.extraCost = null; // optional Float32Array per-cell cost
   }
+  // cheapest way from every off-mesh cell (courtyard, pit, roof, stadium) to the main walkable component, allowing jump/jet climbs
+  computeExit() {
+    const N = this.N, nx = this.nx, ny = this.ny, b = this.bounds;
+    const h = new Float32Array(N); for (let c = 0; c < N; c++) h[c] = this.solid[c] ? this.top[c] : this.ground[c];
+    const i0 = Math.ceil((b.minX + 4 - this.minX) / CS), i1 = Math.floor((b.maxX - 4 - this.minX) / CS) - 1, j0 = Math.ceil((b.minY + 4 - this.minY) / CS), j1 = Math.floor((b.maxY - 4 - this.minY) / CS) - 1;
+    const dist = new Float64Array(N).fill(1e9), next = new Int32Array(N).fill(-1);
+    let heap = [], hd = [];
+    const push = (c, f) => { let k = heap.length; heap.push(c); hd.push(f); while (k > 0) { const q = (k - 1) >> 1; if (hd[q] <= f) break; heap[k] = heap[q]; hd[k] = hd[q]; k = q; } heap[k] = c; hd[k] = f; };
+    const pop = () => { const top = heap[0], tf = hd[0]; const c = heap.pop(), f = hd.pop(); const n = heap.length; if (n) { let k = 0; for (;;) { let q = 2 * k + 1; if (q >= n) break; if (q + 1 < n && hd[q + 1] < hd[q]) q++; if (hd[q] >= f) break; heap[k] = heap[q]; hd[k] = hd[q]; k = q; } heap[k] = c; hd[k] = f; } return [top, tf]; };
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const c = j * nx + i; if (!this.comp[c]) continue;
+      let edge = false; for (let dj = -1; dj <= 1 && !edge; dj++) for (let di = -1; di <= 1; di++) { const n = c + dj * nx + di; if (n >= 0 && n < N && !this.comp[n]) { edge = true; break; } }
+      dist[c] = 0; if (edge) push(c, 0);
+    }
+    while (heap.length) {
+      const [v, dv] = pop(); if (dv > dist[v]) continue;
+      const vi = v % nx, vj = (v / nx) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ui = vi + di, uj = vj + dj; if (ui < i0 || ui > i1 || uj < j0 || uj > j1) continue;
+        const u = uj * nx + ui; if (this.comp[u]) continue;
+        const rise = h[v] - h[u]; if (rise > 45) continue;
+        if (!this.solid[v] && ((this.solid[v - 1] && this.solid[v + 1]) || (this.solid[v - nx] && this.solid[v + nx]))) continue; // gap too narrow for a mech
+        const w = (di && dj ? 1.4142 : 1) + (rise > 1.2 ? 3 + 1.5 * rise : 0) + (rise < -25 ? 4 : 0) + (!this.solid[v] && this.nearWall[v] <= 1 ? 1.5 : 0);
+        const nd = dv + w; if (nd < dist[u]) { dist[u] = nd; next[u] = v; push(u, nd); }
+      }
+    }
+    this.exitNext = next; this.exitDist = dist; this.hgt = h;
+  }
   terrainAt(x, y) {
     const T = this.T;
     let fx = (x - T.minX) / T.step, fy = (y - T.minY) / T.step;

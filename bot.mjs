@@ -32,13 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, esc: 0, offSkip: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"rseed":7});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"rseed":0});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -318,6 +318,36 @@ export class Bot {
       if (sc > bs) { bs = sc; best = [px, py]; }
     }
     this.scoutTo = best; this.scoutUntil = t + 3; return best;
+  }
+  // off the walkable mesh (courtyard, stadium, pit, roof): follow the precomputed exit field, jumping and jetting over walls
+  escapeStep(me) {
+    const m = this.map, X = me.pos[0], Y = me.pos[1], Z = me.pos[2];
+    if (!m.exitNext) m.computeExit();
+    const c0 = m.cellOf(X, Y);
+    if (m.exitNext[c0] < 0) return null;
+    const chain = []; let c = c0;
+    for (let k = 0; k < 3; k++) { const n = m.exitNext[c]; if (n < 0) break; c = n; chain.push(c); if (m.comp[c]) break; }
+    // highest obstacle on the straight line from us to a cell centre
+    const lineMax = (cc) => { const tx = m.cx(cc), ty = m.cy(cc), d = hyp(tx - X, ty - Y), n = Math.max(1, Math.ceil(d / 0.25)); let h = -1e9; for (let i = 1; i <= n; i++) { const q = m.cellOf(X + (tx - X) * i / n, Y + (ty - Y) * i / n); if (q !== c0 && m.hgt[q] > h) h = m.hgt[q]; } return h; };
+    let wp = chain[0], need = Math.max(m.hgt[chain[0]], lineMax(chain[0])), cm = -1e9;
+    for (let k = 0; k < chain.length; k++) { cm = Math.max(cm, m.hgt[chain[k]]); if (k > 0) { const lm = lineMax(chain[k]); if (lm <= cm + 0.5) { wp = chain[k]; need = cm; } } }
+    const dx = m.cx(wp) - X, dy = m.cy(wp) - Y, d = hyp(dx, dy) || 1;
+    const out = { mv: [dx / d, dy / d], jump: false, boost: false, label: "E:walk" };
+    const rise = need - Z;
+    if (me.grounded) {
+      if (rise > 1.0) {
+        const reqE = Math.min(96, 1.7 * rise + 12);
+        if (me.energy < reqE && rise > 2.6) { out.mv = [0, 0]; out.label = "E:charge"; } else { out.jump = true; out.label = "E:climb"; }
+      }
+    } else if (Z < need + 1.5) { out.boost = me.energy > 1; out.label = "E:climb"; }
+    return out;
+  }
+  // ground spot we cannot walk to (enclosed courtyard, stadium) while we stand on the mesh
+  offMesh(x, y) {
+    if (!this.P.offSkip) return false;
+    const m = this.map; if (m.comp[m.cellOf(x, y)]) return false;
+    const me = this.me; if (!m.comp[m.cellOf(me.pos[0], me.pos[1])]) return false;
+    const n = m.nearestOpen(x, y, 6); return !m.comp[n] || hyp(m.cx(n) - x, m.cy(n) - y) > 5;
   }
   seekGoal(t) {
     const me = this.me; let best = null, bd = 1e9;
@@ -670,7 +700,7 @@ export class Bot {
         let gp = null, gd = 1e9;
         for (const p of this.pickups.values()) {
           const isL = p.kind === "laser", isE = P.grabLight && p.kind === "lightning" && !w1;
-          if (!(isL || isE) || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
+          if (!(isL || isE) || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1]) || this.offMesh(p.pos[0], p.pos[1])) continue;
           const d = hyp(p.pos[0] - X, p.pos[1] - Y) * (isL ? 1 : P.grabLight); if (d < Math.min(gd, P.grabR)) { gd = d; gp = p; }
         }
         if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab " + gp.kind; if (P.boostLaser && gd > 12 && me.energy > 20) boost = true; }
@@ -704,7 +734,7 @@ export class Bot {
       if (P.rushR && !laser) {
         let rd = P.rushR;
         for (const p of this.pickups.values()) {
-          if (p.kind !== "laser" || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
+          if (p.kind !== "laser" || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1]) || this.offMesh(p.pos[0], p.pos[1])) continue;
           const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < rd) { rd = d; rushP = p; }
         }
         if (!rushP && P.climb2) {
@@ -723,6 +753,7 @@ export class Bot {
       let best = null, bs = 1e9;
       const consider = (kind, o, w, extra = 0) => {
         if (!this.okPos(o.pos[0], o.pos[1])) return;
+        if (kind !== "drop" && this.offMesh(o.pos[0], o.pos[1])) return;
         let roofPen = 0;
         if (m.solid[m.cellOf(o.pos[0], o.pos[1])] || o.pos[2] > m.groundAt(o.pos[0], o.pos[1]) + 4) { // on a roof
           const h = o.pos[2] - Z;
@@ -895,7 +926,7 @@ export class Bot {
         if (m.walkable(X + px * sg * 4, Y + py * sg * 4)) { mv = [px * sg, py * sg]; boost = me.energy > (light ? 40 : 10); label += "+ldodge"; }
       }
     }
-    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !(label.startsWith("C:") && label !== "C:to") && !label.endsWith("+ldodge") && !label.endsWith("+lcover")) {
+    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !(label.startsWith("C:") && label !== "C:to") && !label.startsWith("E:") && !label.endsWith("+ldodge") && !label.endsWith("+lcover")) {
       const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
       const bl = [];
       for (const pr of obs.projectiles || []) {
@@ -962,7 +993,24 @@ export class Bot {
     if (t - this.stuckT < 0.7 && wantMove && !climbing) {
       const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = P.unstickBoost && me.energy > 10; label = "unstick";
     }
-    // off the nav mesh (roof / pit): head for the nearest open cell
+    if (P.esc && !m.comp[m.cellOf(X, Y)] && !target && !climbing && !(label.startsWith("C:") || label.startsWith("R:"))) {
+      let es = null;
+      // a laser lying inside the same enclosure: take it before leaving
+      if (!laser) for (const p of this.pickups.values()) {
+        if (p.kind !== "laser" || m.comp[m.cellOf(p.pos[0], p.pos[1])] || Math.abs(p.pos[2] - Z) > 4) continue;
+        const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d > 90 || !m.walkLine(X, Y, p.pos[0], p.pos[1])) continue;
+        es = { mv: [(p.pos[0] - X) / (d || 1), (p.pos[1] - Y) / (d || 1)], jump: false, boost: me.energy > 60, label: "E:loot" };
+        if (d < 3.6 && pickSlot(p.kind) !== -1) { act.take = p.id; const ds = pickSlot(p.kind); if (ds != null) act.drop = ds; }
+        break;
+      }
+      if (!es && !(t < (this.escBan || 0))) {
+        es = this.escapeStep(me);
+        const ed = m.exitDist[m.cellOf(X, Y)];
+        if (this.escBest == null || ed < this.escBest - 0.5 || t - this.escT > 12) { this.escBest = ed; this.escT = t; }
+        else if (t - this.escT > 5 && me.grounded && es && es.label !== "E:charge") { this.escBan = t + 2.5; this.escBest = null; es = null; } // no progress: let the old wiggle try
+      }
+      if (es) { mv = es.mv; jump = es.jump; boost = es.boost; label = es.label; this.stuckT = -9; }
+    } else
     if (!m.comp[m.cellOf(X, Y)] && wantMove && !climbing) {
       const c = m.nearestOpen(X, Y); const dx = m.cx(c) - X, dy = m.cy(c) - Y, d = hyp(dx, dy);
       if (d > 0.5 && Z > m.ground[c] + 2.5) mv = [dx / d, dy / d];
