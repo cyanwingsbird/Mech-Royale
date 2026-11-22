@@ -32,13 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, polite: 0, politeR: 0, esc: 0, offSkip: 0, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, polite: 0, politeR: 0, esc: 0, offSkip: 0, offRoof: 0, peri: 0, periH: 28, periE: 70, periEvery: 9, periUntil: 90, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"laserHold":1,"rseed":7});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"laserHold":1,"strafeMin":0.25,"strafeMax":0.7});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -757,7 +757,8 @@ export class Bot {
         for (const p of this.pickups.values()) {
           if (p.kind !== "laser") continue;
           const c = m.cellOf(p.pos[0], p.pos[1]);
-          if (m.comp[c] || m.solid[c] || p.pos[2] > m.ground[c] + 4 || !this.okPos(p.pos[0], p.pos[1]) || (this.offBan && this.offBan.has(p.id))) continue;
+          const roofy = m.solid[c] || p.pos[2] > m.ground[c] + 4;
+          if ((m.comp[c] && !roofy) || (roofy && !(P.offRoof && p.pos[2] - Z < P.offRoof)) || !this.okPos(p.pos[0], p.pos[1]) || (this.offBan && this.offBan.has(p.id))) continue;
           const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < bd) { bd = d; rushOff = p; }
         }
         if (rushOff) rushP = null;
@@ -1003,6 +1004,18 @@ export class Bot {
       }
     }
 
+    // --- periscope: hop up on the jets to look over the buildings for a laser ---
+    if (P.peri && !laser && !this.ffa) {
+      const known = [...this.pickups.values()].some((p) => p.kind === "laser" && !(this.offBan && this.offBan.has(p.id)));
+      const busy = !!target || label.startsWith("E:") || label.startsWith("C:") || label.startsWith("R:") || /^(flee|cover|heal|hide|cornered|shell|grab|rush|climb|charge)/.test(label);
+      if (this.periOn) {
+        if (me.grounded && t - this.periT0 > 0.4) this.periOn = false;
+        else { if (Z - this.periZ0 < P.periH && me.energy > 4 && me.vel[2] > -1) boost = true; jump = false; this.periSpin = true; }
+      } else if (!known && !busy && me.grounded && me.energy >= P.periE && t < P.periUntil && t - (this.periLast ?? -99) > P.periEvery && (t > 0.3)) {
+        this.periOn = true; this.periT0 = t; this.periLast = t; this.periZ0 = Z; jump = true; label = "peri";
+      }
+      if (this.periOn) label = "peri";
+    } else this.periOn = false;
     // --- stuck recovery ---
     this.hist.push([t, X, Y]); while (this.hist.length > 12) this.hist.shift();
     const wantMove = hyp(mv[0], mv[1]) > 0.3;
@@ -1010,7 +1023,7 @@ export class Bot {
       const h0 = this.hist[0];
       if (hyp(X - h0[1], Y - h0[2]) < 1.2 && !(laser && laser.charge > 0)) { this.stuckT = t; this.unstuckDir = (this.rnd() < 0.5 ? -1 : 1) * (0.6 + this.rnd()); this.path = null; }
     }
-    const climbing = label === "climb" || label === "charge jets" || (label.startsWith("R:") && label !== "R:to") || (label.startsWith("C:") && label !== "C:to");
+    const climbing = label === "climb" || label === "charge jets" || label === "peri" || label === "E:laser" || (label.startsWith("R:") && label !== "R:to") || (label.startsWith("C:") && label !== "C:to");
     if (climbing) this.stuckT = -9;
     if (t - this.stuckT < 0.7 && wantMove && !climbing) {
       const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = P.unstickBoost && me.energy > 10; label = "unstick";
@@ -1098,6 +1111,7 @@ export class Bot {
       if (t - this.lastDmgT < 2 && this.lastDmgBearing != null && !(lastE && lastE.fresh)) aim = [this.lastDmgBearing, 0];
       else if (lastE) aim = [Math.atan2(lastE.pos[1] - Y, lastE.pos[0] - X), clamp(Math.atan2(this.centerZ(lastE) - Z - 7, lastE.dist || 1), -0.5, 0.8)];
       else if (t - this.soundT < 1.5 && this.soundYaw != null) aim = [this.soundYaw, 0];
+      else if (this.periOn) aim = [wrap(me.aim[0] + 2), -0.15];
       else if (P.spin0 && t < P.spin0) aim = [wrap(me.aim[0] + 2), 0]; // look all around once at the start
       else {
         const base = wantMove ? Math.atan2(mv[1], mv[0]) : (this.scanBase ?? me.aim[0]);
