@@ -38,7 +38,7 @@ export const PARAMS = {
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"laserHold":1,"rseed":6});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"laserHold":1,"rseed":7});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
