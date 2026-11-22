@@ -32,13 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, esc: 0, offSkip: 0, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, polite: 0, politeR: 0, esc: 0, offSkip: 0, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"rseed":7});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"polite":1,"rseed":0});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -405,6 +405,7 @@ export class Bot {
       if (ev.type === "damaged" && ev.weapon !== "zone") {
         this.lastDmgT = t; if (ev.bearing != null) this.lastDmgBearing = ev.bearing; this.lastDmgBy = ev.by;
         const e = this.en.get(ev.by); if (e) { e.hitMeT = t; e.dmgToMe = (e.dmgToMe || 0) + ev.amount; }
+        if (ev.by != null && ev.by < 100 && ev.weapon !== "zone") (this.hostileIds ??= new Set()).add(ev.by);
         const n = this.npcs.get(ev.by); if (n) n.hitMeT = t;
       } else if (ev.type === "kill") { killsNow++; this.myKills++; this.en.delete(ev.target); }
       else if (ev.type === "hit") { this.hits++; }
@@ -504,6 +505,7 @@ export class Bot {
     for (const e of losThreats) {
       if (e.dist > maxRange) continue;
       const hostile = (e.hitMeT && t - e.hitMeT < 6) || e.aimingAtMe;
+      if (P.polite && !this.ffa && !(this.hostileIds && this.hostileIds.has(e.id)) && !(e.charging && e.aimingAtMe) && !(e.dist < P.politeR)) continue;
       if ((this.ffa || P.pickyEngage) && !hostile && e.dist > P.ffaEngage && e.hp > 0.5 * e.max_hp) continue;
       let s = (e.hp ?? 1400) / myDps + e.dist / 50 - (hostile ? 2 : 0) - (e.id === this.tgtId ? 1.5 : 0);
       if (P.laserTgt && !laser && (e.weapons || []).includes("laser")) s -= P.laserTgt;
