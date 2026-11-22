@@ -32,13 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, polite: 0, politeR: 0, llFar: 0, esc: 0, offSkip: 0, offRoof: 0, peri: 0, periH: 28, periE: 70, periEvery: 9, periUntil: 90, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, polite: 0, politeR: 0, llFar: 0, noAccClose: 0, esc: 0, offSkip: 0, offRoof: 0, peri: 0, periH: 28, periE: 70, periEvery: 9, periUntil: 90, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":1,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"laserHold":1,"laserRange":260});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"laserHold":1,"laserRange":260,"noAccClose":1});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -668,7 +668,7 @@ export class Bot {
       if (target.weapons && target.weapons.includes("lightning")) want = Math.max(want, 80);
       if (light && !laser && P.lightClose) want = Math.min(want, 25);
       if (laser && (P.llFar || !(target.weapons && target.weapons.includes("lightning")))) want = Math.max(want, P.laserRange);
-      if (this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
+      if (!P.noAccClose && this.shots > 14 && this.hits / this.shots < 0.3) want = Math.min(want, 70);
       if (z.radius < 80) want = Math.min(want, z.radius * 0.9);
       if (P.camp && (!this.ffa || P.campAlways) && this.camp) {
         want = Math.min(Math.max(target.dist, 40), 200); // hold the current distance, do not chase
