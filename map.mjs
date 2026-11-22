@@ -184,6 +184,33 @@ export class GameMap {
     }
     this.exitNext = next; this.exitDist = dist; this.hgt = h;
   }
+  // jet-aware field toward one goal cell: next[c] = neighbour to step to, within radius R of the goal (climbs cost extra)
+  fieldTo(gx, gy, R) {
+    if (!this.hgt) this.computeExit();
+    const N = this.N, nx = this.nx, b = this.bounds, h = this.hgt;
+    const i0 = Math.ceil((b.minX + 4 - this.minX) / CS), i1 = Math.floor((b.maxX - 4 - this.minX) / CS) - 1, j0 = Math.ceil((b.minY + 4 - this.minY) / CS), j1 = Math.floor((b.maxY - 4 - this.minY) / CS) - 1;
+    const g = this.cellOf(gx, gy), gi = g % nx, gj = (g / nx) | 0, RC = R / CS, R2 = RC * RC;
+    const dist = new Float64Array(N).fill(1e9), next = new Int32Array(N).fill(-1);
+    const heap = [], hd = [];
+    const push = (c, f) => { let k = heap.length; heap.push(c); hd.push(f); while (k > 0) { const q = (k - 1) >> 1; if (hd[q] <= f) break; heap[k] = heap[q]; hd[k] = hd[q]; k = q; } heap[k] = c; hd[k] = f; };
+    const pop = () => { const top = heap[0], tf = hd[0]; const c = heap.pop(), f = hd.pop(); const n = heap.length; if (n) { let k = 0; for (;;) { let q = 2 * k + 1; if (q >= n) break; if (q + 1 < n && hd[q + 1] < hd[q]) q++; if (hd[q] >= f) break; heap[k] = heap[q]; hd[k] = hd[q]; k = q; } heap[k] = c; hd[k] = f; } return [top, tf]; };
+    dist[g] = 0; push(g, 0);
+    while (heap.length) {
+      const [v, dv] = pop(); if (dv > dist[v]) continue;
+      const vi = v % nx, vj = (v / nx) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ui = vi + di, uj = vj + dj; if (ui < i0 || ui > i1 || uj < j0 || uj > j1) continue;
+        if ((ui - gi) * (ui - gi) + (uj - gj) * (uj - gj) > R2) continue;
+        const u = uj * nx + ui;
+        const rise = h[v] - h[u]; if (rise > 45) continue;
+        if (!this.solid[v] && ((this.solid[v - 1] && this.solid[v + 1]) || (this.solid[v - nx] && this.solid[v + nx]))) continue;
+        const w = (di && dj ? 1.4142 : 1) + (rise > 1.2 ? 3 + 1.5 * rise : 0) + (rise < -25 ? 4 : 0) + (!this.solid[v] && this.nearWall[v] <= 1 ? 1.5 : 0) + (!this.solid[v] && this.blocked[v] ? 1 : 0);
+        const nd = dv + w; if (nd < dist[u]) { dist[u] = nd; next[u] = v; push(u, nd); }
+      }
+    }
+    return { next, dist, goal: g };
+  }
   terrainAt(x, y) {
     const T = this.T;
     let fx = (x - T.minX) / T.step, fy = (y - T.minY) / T.step;

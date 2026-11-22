@@ -32,13 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, esc: 0, offSkip: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, esc: 0, offSkip: 0, escGate: 0, offRush: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"rseed":7});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"esc":1,"offSkip":1,"escGate":1,"offRush":140,"rseed":0});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -49,6 +49,7 @@ export class Bot {
     this.name = "kestrel";
     this.cfg = hello.config; this.map = map; this.id = hello.slot;
     this.P = { ...PARAMS, ...params };
+    if ((this.P.esc || this.P.offRush) && map && !map.exitNext) { map.computeExit(); for (let k = 0; k < 6; k++) map.fieldTo(40 * k - 100, 30 * k - 90, 150); }
     let s = (((hello.seed >>> 0) || 12345) ^ (this.P.rseed | 0)) >>> 0 || 1;
     this.rnd = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
     this.en = new Map(); this.npcs = new Map(); this.crates = new Map(); this.pickups = new Map(); this.cubes = new Map();
@@ -320,13 +321,14 @@ export class Bot {
     this.scoutTo = best; this.scoutUntil = t + 3; return best;
   }
   // off the walkable mesh (courtyard, stadium, pit, roof): follow the precomputed exit field, jumping and jetting over walls
-  escapeStep(me) {
+  escapeStep(me, field = null) {
     const m = this.map, X = me.pos[0], Y = me.pos[1], Z = me.pos[2];
     if (!m.exitNext) m.computeExit();
+    const nxt = field ? field.next : m.exitNext;
     const c0 = m.cellOf(X, Y);
-    if (m.exitNext[c0] < 0) return null;
+    if (nxt[c0] < 0) return null;
     const chain = []; let c = c0;
-    for (let k = 0; k < 3; k++) { const n = m.exitNext[c]; if (n < 0) break; c = n; chain.push(c); if (m.comp[c]) break; }
+    for (let k = 0; k < 3; k++) { const n = nxt[c]; if (n < 0) break; c = n; chain.push(c); if (field ? c === field.goal : m.comp[c]) break; }
     // highest obstacle on the straight line from us to a cell centre
     const lineMax = (cc) => { const tx = m.cx(cc), ty = m.cy(cc), d = hyp(tx - X, ty - Y), n = Math.max(1, Math.ceil(d / 0.25)); let h = -1e9; for (let i = 1; i <= n; i++) { const q = m.cellOf(X + (tx - X) * i / n, Y + (ty - Y) * i / n); if (q !== c0 && m.hgt[q] > h) h = m.hgt[q]; } return h; };
     let wp = chain[0], need = Math.max(m.hgt[chain[0]], lineMax(chain[0])), cm = -1e9;
@@ -537,7 +539,7 @@ export class Bot {
     // --- movement ---
     let mv = [0, 0], boost = false, jump = false, label = "idle";
     let farmTgt = null; // non-mech thing to shoot
-    let rushP = null, rushRoof = null;
+    let rushP = null, rushRoof = null, rushOff = null;
     const threatsForCover = recent.filter((e) => t - e.seenT < 4).sort((a, b) => a.dist - b.dist);
 
     const dodge = (ref, want) => {
@@ -730,7 +732,7 @@ export class Bot {
       farmTgt = npcFoe; mv = dodge(npcFoe, 70); label = "npc fight";
     } else {
       // --- no target: loot / farm / position ---
-      rushP = null; rushRoof = null;
+      rushP = null; rushRoof = null; rushOff = null;
       if (P.rushR && !laser) {
         let rd = P.rushR;
         for (const p of this.pickups.values()) {
@@ -747,6 +749,16 @@ export class Bot {
             const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < bd) { bd = d; rushRoof = { p, rf }; }
           }
         }
+      }
+      if (P.offRush && !laser && m.comp[m.cellOf(X, Y)]) {
+        let bd = Math.min(P.offRush, rushP ? hyp(rushP.pos[0] - X, rushP.pos[1] - Y) - 40 : 1e9);
+        for (const p of this.pickups.values()) {
+          if (p.kind !== "laser") continue;
+          const c = m.cellOf(p.pos[0], p.pos[1]);
+          if (m.comp[c] || m.solid[c] || p.pos[2] > m.ground[c] + 4 || !this.okPos(p.pos[0], p.pos[1]) || (this.offBan && this.offBan.has(p.id))) continue;
+          const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < bd) { bd = d; rushOff = p; }
+        }
+        if (rushOff) rushP = null;
       }
       const hot = recent.filter((e) => t - e.seenT < 5 && e.dist < P.quietR);
       const quiet = hot.length === 0 && !underFire;
@@ -863,6 +875,14 @@ export class Bot {
       if (st) { mv = st.mv; jump = st.jump; boost = st.boost; label = st.label; }
       const p = rushRoof.p;
       if (hyp(p.pos[0] - X, p.pos[1] - Y) < 3.6 && Math.abs(p.pos[2] - Z) < 3.8 && pickSlot(p.kind) !== -1) { act.take = p.id; const ds = pickSlot(p.kind); if (ds != null) act.drop = ds; }
+    }
+    if (rushOff && !label.startsWith("zone")) {
+      const p = rushOff, d = hyp(p.pos[0] - X, p.pos[1] - Y);
+      if (!this.offF || this.offF.id !== p.id) this.offF = { id: p.id, f: m.fieldTo(p.pos[0], p.pos[1], Math.min(170, d + 25)), t0: t };
+      const st = this.escapeStep(me, this.offF.f);
+      if (!st || t - this.offF.t0 > 30) (this.offBan ??= new Set()).add(p.id);
+      else { mv = st.mv; jump = st.jump; boost = st.boost || (st.label === "E:walk" && me.grounded && me.energy > 75 && d > 25); label = "E:laser"; this.stuckT = -9; }
+      if (d < 3.6 && Math.abs(p.pos[2] - Z) < 3.8 && pickSlot(p.kind) !== -1) { act.take = p.id; const ds = pickSlot(p.kind); if (ds != null) act.drop = ds; }
     }
     if (rushP && !label.startsWith("zone")) {
       const d = hyp(rushP.pos[0] - X, rushP.pos[1] - Y);
@@ -993,7 +1013,7 @@ export class Bot {
     if (t - this.stuckT < 0.7 && wantMove && !climbing) {
       const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = P.unstickBoost && me.energy > 10; label = "unstick";
     }
-    if (P.esc && !m.comp[m.cellOf(X, Y)] && !target && !climbing && !(label.startsWith("C:") || label.startsWith("R:"))) {
+    if (P.esc && !m.comp[m.cellOf(X, Y)] && !target && !climbing && label !== "E:laser" && !(label.startsWith("C:") || label.startsWith("R:")) && !(P.escGate && /^(flee|cover|heal|hide|cornered|duck|shell|npc|hold)/.test(label))) {
       let es = null;
       // a laser lying inside the same enclosure: take it before leaving
       if (!laser) for (const p of this.pickups.values()) {
