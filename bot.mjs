@@ -32,13 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, leadMul: 1, ahead: 0.05, spinForce: 0, scout: 0, scoutT: 60, scoutE: 30, scoutFightR: 0, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
-Object.assign(PARAMS, {"explore":0,"boostStrafe":1,"rseed":1});
+Object.assign(PARAMS, {"explore":0,"scout":1,"grabR":400,"rushR":400,"boostLaser":1,"rseed":0});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -293,6 +293,32 @@ export class Bot {
   }
 
   // where to look for a fight: nearest enemy seen in the last 40 s, else the last near/mid gunshot
+  scoutMark(me) {
+    const m = this.map, b = m.bounds, C = 20;
+    if (!this.sg) { this.sgW = Math.ceil((b.maxX - b.minX) / C); this.sgH = Math.ceil((b.maxY - b.minY) / C); this.sg = new Uint8Array(this.sgW * this.sgH); }
+    const X = me.pos[0], Y = me.pos[1], ay = me.aim[0], R = 160, cx0 = Math.floor((X - b.minX) / C), cy0 = Math.floor((Y - b.minY) / C), rr = Math.ceil(R / C);
+    for (let j = Math.max(0, cy0 - rr); j <= Math.min(this.sgH - 1, cy0 + rr); j++) for (let i = Math.max(0, cx0 - rr); i <= Math.min(this.sgW - 1, cx0 + rr); i++) {
+      const k = j * this.sgW + i; if (this.sg[k]) continue;
+      const px = b.minX + (i + 0.5) * C - X, py = b.minY + (j + 0.5) * C - Y, d = hyp(px, py);
+      if (d < 45 || (d < R && Math.abs(wrap(Math.atan2(py, px) - ay)) < 0.95)) this.sg[k] = 1;
+    }
+  }
+  scoutGoal(t, X, Y) {
+    if (this.scoutTo && t < this.scoutUntil && hyp(this.scoutTo[0] - X, this.scoutTo[1] - Y) > 12) return this.scoutTo;
+    const m = this.map, b = m.bounds, C = 20, z = this.z; let best = null, bs = -1e9;
+    for (let k = 0; k < 16; k++) for (const r of [70, 130]) {
+      const a = (k / 16) * TAU, px = X + Math.cos(a) * r, py = Y + Math.sin(a) * r;
+      if (px < b.minX + 10 || px > b.maxX - 10 || py < b.minY + 10 || py > b.maxY - 10) continue;
+      if (!this.okPos(px, py) || hyp(px - z.next_center[0], py - z.next_center[1]) > z.next_radius * 0.9) continue;
+      const c = m.cellOf(px, py); if (!m.comp[c]) continue;
+      const ci = Math.floor((px - b.minX) / C), cj = Math.floor((py - b.minY) / C); let un = 0;
+      for (let j = cj - 4; j <= cj + 4; j++) for (let i = ci - 4; i <= ci + 4; i++) { if (i < 0 || j < 0 || i >= this.sgW || j >= this.sgH) continue; if ((i - ci) ** 2 + (j - cj) ** 2 > 16) continue; if (!this.sg[j * this.sgW + i]) un++; }
+      let sc = un - 0.03 * r;
+      for (const e of this.en.values()) if (t - e.seenT < 8 && hyp(e.pos[0] - px, e.pos[1] - py) < 110) sc -= 25;
+      if (sc > bs) { bs = sc; best = [px, py]; }
+    }
+    this.scoutTo = best; this.scoutUntil = t + 3; return best;
+  }
   seekGoal(t) {
     const me = this.me; let best = null, bd = 1e9;
     for (const e of this.en.values()) {
@@ -324,7 +350,7 @@ export class Bot {
     const px = o.pos[0] + o.vel[0] * ahead, py = o.pos[1] + o.vel[1] * ahead, pz = this.centerZ(o);
     let tt = 0, ax = px, ay = py, az = pz;
     if (speed < 1e8) for (let k = 0; k < 4; k++) {
-      ax = px + vx * tt; ay = py + vy * tt; az = pz + vz * tt;
+      const tl = tt * this.P.leadMul; ax = px + vx * tl; ay = py + vy * tl; az = pz + vz * tl;
       tt = Math.max(0, hyp(ax - mx, ay - my, az - mz) - 3) / speed;
     }
     const d = hyp(ax - mx, ay - my);
@@ -336,6 +362,7 @@ export class Bot {
     const me = obs.self, t = obs.t, m = this.map, P = this.P, cfg = this.cfg;
     this.me = me; this.z = obs.zone; this.t = t;
     this.scale = 1 + 0.05 * me.cubes; this.muzzleH = me.stats.muzzle_height ?? 7;
+    if (this.P.scout) this.scoutMark(me);
     const act = { tick: obs.tick };
     const X = me.pos[0], Y = me.pos[1], Z = me.pos[2];
     const hpF = me.hp / me.max_hp;
@@ -636,6 +663,7 @@ export class Bot {
         }
         if (best) { mv = best; boost = target.dist < P.kbBoost && me.energy > 25; label = "kb " + target.id; }
       }
+      if (P.scout && P.scoutFightR && !laser && t < P.scoutT && target.dist > P.scoutFightR) { const g4 = this.scoutGoal(t, X, Y); if (g4) { const nv = this.navTo(g4[0], g4[1], t); mv = [nv[0], nv[1]]; boost = me.energy > P.scoutE + 20; label = "scoutf " + target.id; } }
       if (P.evade && !this.ffa && this.myKills >= P.evadeAfter && (!P.evadeNoLaser || !laser)) { mv = dodge(target, P.evade); boost = me.energy > 40 && target.dist < P.evade * 0.7; label = "evade " + target.id; }
       if (P.grabR && !laser && (!this.retreating || P.grabRetreat)) {
         // a laser lying close by is worth more than a few seconds of strafing: go and take it while shooting
@@ -776,6 +804,9 @@ export class Bot {
         if (hyp(gx - X, gy - Y) > 14 && (dN > z.next_radius - 15 || this.zonePull)) { const nv = this.navTo(gx, gy, t); mv = [nv[0] * 0.42, nv[1] * 0.42]; if (this.zonePull) mv = [nv[0], nv[1]]; label = "drift"; }
         else if (P.seek && !this.ffa && hpF > P.seekHp && (laser || me.cubes >= 3) && this.seekGoal(t)) {
           const g2 = this.seekGoal(t); const nv = this.navTo(g2[0], g2[1], t); mv = [nv[0], nv[1]]; label = "seek";
+        }
+        else if (P.scout && !laser && t < P.scoutT && this.scoutGoal(t, X, Y)) {
+          const g3 = this.scoutGoal(t, X, Y); const nv = this.navTo(g3[0], g3[1], t); mv = [nv[0], nv[1]]; boost = me.energy > P.scoutE; label = "scout";
         }
         else if (P.explore && quiet && (!laser || me.cubes < 10)) {
           // nothing to do: walk to a fresh spot inside the next circle to find weapons, crates and cubes
@@ -940,9 +971,9 @@ export class Bot {
     // --- aim & fire ---
     const fire = [false, false];
     let aim = null;
-    const shootAt = target || farmTgt;
+    const shootAt = target || (P.spinForce && t < P.spin0 ? null : farmTgt);
     this.shootAt = shootAt ? { id: shootAt.id, kind: shootAt.kind || (this.crates.has(shootAt.id) ? "crate" : "?"), dist: hyp(shootAt.pos[0] - X, shootAt.pos[1] - Y), vis: shootAt.seenT === t, vel: shootAt.vel } : null;
-    const ahead = 0.05;
+    const ahead = P.ahead;
     if (shootAt) {
       const isMech = shootAt === target;
       const L = gun ? this.lead(shootAt, gun.stats.speed, ahead) : this.lead(shootAt, 1e9, ahead);
