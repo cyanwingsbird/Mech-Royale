@@ -32,12 +32,13 @@ export const PARAMS = {
   kite: 0,
   headAim: 0, duck: 0,
   dual: 0, // carry laser + lightning (drops the gun)
-  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
+  grabR: 120, grabLight: 0, grabRetreat: 0, spin0: 1.7, laserDodge: 0, ldStart: 0.4, pwL: 0.35, pwE: 0.9, noLight: 0, boostStrafe: 0, bsR: 120, bsE: 40, aimSlack: 0.05, grabRoof: 0, npcLaserR: 0, npcLaserW: 1, climb2: 0, rushR: 0, boostLaser: 0, kb: 0, kbBoost: 140, evade: 0, evadeAfter: 0, evadeNoLaser: 0, npcW: 1, quietR: 160, laserTgt: 0, crateNoLaser: 1, threatW: 0, noMortar: 1, rseed: 0, roof: 0, roofAlways: 0, roofMinH: 8, roofMaxH: 38, roofLaserR: 70,
   laserRange: 200,
   camp: 0, // hold a defensive spot while the match looks like a squad hunt (no unexplained deaths)
   campLootR: 45, campLaserR: 110, campFightLeash: 12,
   climb: 0, // jet up onto roofs for lasers (off: roof items are rarely visible from the street)
 };
+Object.assign(PARAMS, {"explore":0,"wantRange":60,"laserRange":110,"rseed":0});
 
 const UPG = ["laser_damage", "plating", "laser_charge", "lightning_range", "lightning_efficiency", "armor", "gun_damage", "nanites", "gun_rate", "servos", "gun_mag", "gun_velocity",
   "reactor", "capacitor", "gyros", "lightning_chain", "jets", "mortar_reload", "sensors"];
@@ -266,6 +267,26 @@ export class Bot {
     }
     return best;
   }
+  climbStep(rf, gx, gy, t) {
+    const me = this.me, X = me.pos[0], Y = me.pos[1], Z = me.pos[2], m = this.map;
+    if (!this.cl || this.cl.id !== rf.id) this.cl = { id: rf.id, ap: this.roofApproachFor(rf), t0: null };
+    const st = this.cl, ap = st.ap; if (!ap) { (this.climbBan ??= new Set()).add(rf.id); return null; }
+    const h = rf.top - Z;
+    if (Z > rf.top - 1.5 && this.roofLab[m.cellOf(X, Y)] === rf.id) { const dd = hyp(gx - X, gy - Y) || 1; return { mv: [(gx - X) / dd, (gy - Y) / dd], jump: false, boost: false, label: "C:walk" }; }
+    const dAp = hyp(ap.x - X, ap.y - Y), dEdge = hyp(ap.ex - X, ap.ey - Y);
+    if (dAp < 3 || dEdge < 5 || (st.t0 != null && t - st.t0 < 9)) {
+      if (st.t0 == null) st.t0 = t;
+      if (t - st.t0 > 8) { (this.climbBan ??= new Set()).add(rf.id); this.cl = null; return null; }
+      const need = Math.min(100, 1.7 * Math.max(0, h) + 12);
+      if (me.grounded && me.energy < need && h > 2) { st.t0 = t; return { mv: [0, 0], jump: false, boost: false, label: "C:charge" }; }
+      const tx = Z > rf.top + 0.5 ? gx : ap.ex, ty = Z > rf.top + 0.5 ? gy : ap.ey;
+      const dd = hyp(tx - X, ty - Y) || 1; const out = { mv: [(tx - X) / dd, (ty - Y) / dd], jump: false, boost: false, label: "C:climb" };
+      if (h > -1.5) { if (me.grounded) out.jump = true; else out.boost = me.energy > 1; }
+      return out;
+    }
+    st.t0 = null;
+    const nv = this.navTo(ap.x, ap.y, t); return { mv: [nv[0], nv[1]], jump: false, boost: me.energy > 40, label: "C:to" };
+  }
   onRoofCell(r, x, y, minDepth = 1) {
     const c = this.map.cellOf(x, y);
     return this.roofLab[c] === r.id && this.roofDist[c] >= minDepth;
@@ -459,7 +480,7 @@ export class Bot {
     // --- movement ---
     let mv = [0, 0], boost = false, jump = false, label = "idle";
     let farmTgt = null; // non-mech thing to shoot
-    let rushP = null;
+    let rushP = null, rushRoof = null;
     const threatsForCover = recent.filter((e) => t - e.seenT < 4).sort((a, b) => a.dist - b.dist);
 
     const dodge = (ref, want) => {
@@ -602,7 +623,7 @@ export class Bot {
         let vx = ax / an * P.kite + sv[0] * (1 - P.kite), vy = ay / an * P.kite + sv[1] * (1 - P.kite); const vn = hyp(vx, vy) || 1; vx /= vn; vy /= vn;
         if (m.walkable(X + vx * 6, Y + vy * 6) && this.okPos(X + vx * 8, Y + vy * 8)) mv = [vx, vy]; else mv = sv;
         label = "kite " + target.id;
-      } else { mv = dodge(target, want); label = "fight " + target.id; }
+      } else { mv = dodge(target, want); label = "fight " + target.id; if (P.boostStrafe && target.dist < P.bsR && me.energy > P.bsE && !(light && !laser)) boost = true; }
       if (P.kb && laser && !this.ffa && target.dist < P.laserRange - 15 && !(target.weapons || []).includes("lightning") || (P.kb && laser && !this.ffa && target.dist < 60)) {
         // sniper: back straight off to laser range (they barely hit beyond ~150 m), sprint when close
         const ax = X - target.pos[0], ay = Y - target.pos[1], an = hyp(ax, ay) || 1;
@@ -625,6 +646,21 @@ export class Bot {
           const d = hyp(p.pos[0] - X, p.pos[1] - Y) * (isL ? 1 : P.grabLight); if (d < Math.min(gd, P.grabR)) { gd = d; gp = p; }
         }
         if (gp) { const nv = this.navTo(gp.pos[0], gp.pos[1], t); mv = [nv[0], nv[1]]; label = "grab " + gp.kind; if (P.boostLaser && gd > 12 && me.energy > 20) boost = true; }
+        else if (P.grabRoof && !laser) {
+          if (!this.roofs) this.computeRoofs();
+          let rr = null, bd = P.grabRoof;
+          for (const p of this.pickups.values()) {
+            if (p.kind !== "laser" || p.pos[2] <= m.groundAt(p.pos[0], p.pos[1]) + 4) continue;
+            const id = this.roofLab[m.cellOf(p.pos[0], p.pos[1])]; if (id == null || id < 0 || (this.climbBan && this.climbBan.has(id))) continue;
+            const rf = this.roofs.find((q) => q.id === id); if (!rf || Math.abs(rf.top - p.pos[2]) > 3) continue;
+            const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < bd) { bd = d; rr = { p, rf }; }
+          }
+          if (rr) {
+            const st = this.climbStep(rr.rf, rr.p.pos[0], rr.p.pos[1], t);
+            if (st) { mv = st.mv; jump = st.jump; boost = st.boost; label = st.label; }
+            if (hyp(rr.p.pos[0] - X, rr.p.pos[1] - Y) < 3.6 && Math.abs(rr.p.pos[2] - Z) < 3.8 && pickSlot(rr.p.kind) !== -1) { act.take = rr.p.id; const ds = pickSlot(rr.p.kind); if (ds != null) act.drop = ds; }
+          }
+        }
       }
     } else if (P.duck && this.snipedBy(t)) {
       const e = this.snipedBy(t);
@@ -636,12 +672,22 @@ export class Bot {
       farmTgt = npcFoe; mv = dodge(npcFoe, 70); label = "npc fight";
     } else {
       // --- no target: loot / farm / position ---
-      rushP = null;
+      rushP = null; rushRoof = null;
       if (P.rushR && !laser) {
         let rd = P.rushR;
         for (const p of this.pickups.values()) {
           if (p.kind !== "laser" || p.pos[2] > m.groundAt(p.pos[0], p.pos[1]) + 4 || !this.okPos(p.pos[0], p.pos[1])) continue;
           const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < rd) { rd = d; rushP = p; }
+        }
+        if (!rushP && P.climb2) {
+          if (!this.roofs) this.computeRoofs();
+          let bd = P.rushR;
+          for (const p of this.pickups.values()) {
+            if (p.kind !== "laser" || p.pos[2] <= m.groundAt(p.pos[0], p.pos[1]) + 4) continue;
+            const id = this.roofLab[m.cellOf(p.pos[0], p.pos[1])]; if (id == null || id < 0 || (this.climbBan && this.climbBan.has(id))) continue;
+            const rf = this.roofs.find((q) => q.id === id); if (!rf || Math.abs(rf.top - p.pos[2]) > 3) continue;
+            const d = hyp(p.pos[0] - X, p.pos[1] - Y); if (d < bd) { bd = d; rushRoof = { p, rf }; }
+          }
         }
       }
       const hot = recent.filter((e) => t - e.seenT < 5 && e.dist < P.quietR);
@@ -665,7 +711,7 @@ export class Bot {
       for (const d of obs.drops || []) if (d.lands_in < P.dropLead) consider("drop", d, P.dropW, d.holder != null && d.holder !== me.id ? 80 : 0);
       if (quiet && hpF > P.farmHp) {
         for (const c of this.crates.values()) consider("crate", c, 1.3 * P.farmBias * (laser ? 1 : P.crateNoLaser), 15 * P.farmBias * (laser ? 1 : P.crateNoLaser));
-        if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias * P.npcW, 30 * P.farmBias * P.npcW);
+        if (hpF > P.npcFarmHp) for (const n of this.npcs.values()) if (t - n.seenT < 40) consider("npc", n, 1.4 * P.farmBias * P.npcW * (laser && P.npcLaserR ? P.npcLaserW : 1), 30 * P.farmBias * P.npcW * (laser && P.npcLaserR ? P.npcLaserW : 1));
       }
       if (!quiet && best && best.d > 45 && hpF < 0.8) best = null;
       const camping = P.camp && (!this.ffa || P.campAlways);
@@ -687,9 +733,9 @@ export class Bot {
       } else if (best && bs < 420) {
         const o = best.o;
         if (best.kind === "crate" || best.kind === "npc") {
-          const rng = best.kind === "crate" ? P.crateRange : P.npcRange;
+          const rng = best.kind === "crate" ? P.crateRange : (laser && P.npcLaserR ? P.npcLaserR : P.npcRange);
           const vis = best.d < rng && m.los(X, Y, Z + this.muzzleH, o.pos[0], o.pos[1], this.centerZ({ ...o, kind: best.kind }));
-          if (vis) { farmTgt = { ...o, kind: best.kind, vel: o.vel || [0, 0, 0] }; if (best.kind === "npc") mv = dodge(o, 65); else if (best.d > 30) { const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]]; } }
+          if (vis) { farmTgt = { ...o, kind: best.kind, vel: o.vel || [0, 0, 0] }; if (best.kind === "npc") mv = dodge(o, laser && P.npcLaserR ? 140 : 65); else if (best.d > 30) { const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]]; } }
           else { const nv = this.navTo(o.pos[0], o.pos[1], t); mv = [nv[0], nv[1]]; }
           label = "farm " + best.kind;
         } else if (best.kind === "pickup" && (m.solid[m.cellOf(o.pos[0], o.pos[1])] || o.pos[2] > m.groundAt(o.pos[0], o.pos[1]) + 4)) {
@@ -749,6 +795,12 @@ export class Bot {
         }
         else label = "wait";
       }
+    }
+    if (!rushP && rushRoof && !label.startsWith("zone")) {
+      const st = this.climbStep(rushRoof.rf, rushRoof.p.pos[0], rushRoof.p.pos[1], t);
+      if (st) { mv = st.mv; jump = st.jump; boost = st.boost; label = st.label; }
+      const p = rushRoof.p;
+      if (hyp(p.pos[0] - X, p.pos[1] - Y) < 3.6 && Math.abs(p.pos[2] - Z) < 3.8 && pickSlot(p.kind) !== -1) { act.take = p.id; const ds = pickSlot(p.kind); if (ds != null) act.drop = ds; }
     }
     if (rushP && !label.startsWith("zone")) {
       const d = hyp(rushP.pos[0] - X, rushP.pos[1] - Y);
@@ -812,7 +864,7 @@ export class Bot {
         if (m.walkable(X + px * sg * 4, Y + py * sg * 4)) { mv = [px * sg, py * sg]; boost = me.energy > (light ? 40 : 10); label += "+ldodge"; }
       }
     }
-    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !label.endsWith("+ldodge") && !label.endsWith("+lcover")) {
+    if (P.dodge && label !== "shell" && label !== "climb" && !(label.startsWith("R:") && label !== "R:to") && !(label.startsWith("C:") && label !== "C:to") && !label.endsWith("+ldodge") && !label.endsWith("+lcover")) {
       const R = 2.5 * this.scale + 0.45, H = 9 * this.scale, acc = me.stats.ground_accel ?? 58.5;
       const bl = [];
       for (const pr of obs.projectiles || []) {
@@ -874,7 +926,7 @@ export class Bot {
       const h0 = this.hist[0];
       if (hyp(X - h0[1], Y - h0[2]) < 1.2 && !(laser && laser.charge > 0)) { this.stuckT = t; this.unstuckDir = (this.rnd() < 0.5 ? -1 : 1) * (0.6 + this.rnd()); this.path = null; }
     }
-    const climbing = label === "climb" || label === "charge jets" || (label.startsWith("R:") && label !== "R:to");
+    const climbing = label === "climb" || label === "charge jets" || (label.startsWith("R:") && label !== "R:to") || (label.startsWith("C:") && label !== "C:to");
     if (climbing) this.stuckT = -9;
     if (t - this.stuckT < 0.7 && wantMove && !climbing) {
       const a = Math.atan2(mv[1], mv[0]) + this.unstuckDir; mv = [Math.cos(a), Math.sin(a)]; jump = me.grounded; boost = P.unstickBoost && me.energy > 10; label = "unstick";
@@ -896,7 +948,7 @@ export class Bot {
       const L = gun ? this.lead(shootAt, gun.stats.speed, ahead) : this.lead(shootAt, 1e9, ahead);
       const D = this.lead(shootAt, 1e9, 0.1);
       const rad = (isMech ? 2.5 * (1 + 0.05 * (shootAt.cubes || 0)) : shootAt.kind === "npc" ? 1.8 : 1.4);
-      const slack = me.stats.turn_rate * 0.05;
+      const slack = me.stats.turn_rate * P.aimSlack;
       aim = [L.yaw, L.pitch];
       const gunReady = gun && gun.reload <= 0 && gun.ammo > 0;
       // laser: charge while tracking, release on a direct line
